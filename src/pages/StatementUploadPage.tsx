@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,8 +8,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Upload, FileText, CheckCircle, AlertCircle, Clock } from "lucide-react";
+import { Upload, FileText, CheckCircle, AlertCircle, Clock, Brain, Loader2 } from "lucide-react";
 import { motion } from "framer-motion";
+import { Progress } from "@/components/ui/progress";
 
 const MONTHS = [
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
@@ -24,6 +25,8 @@ export default function StatementUploadPage() {
   const [year, setYear] = useState(new Date().getFullYear().toString());
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [processingStep, setProcessingStep] = useState("");
+  const [progress, setProgress] = useState(0);
 
   const { data: cards } = useQuery({
     queryKey: ["credit-cards"],
@@ -52,34 +55,76 @@ export default function StatementUploadPage() {
       return;
     }
     setUploading(true);
+    setProgress(10);
+    setProcessingStep("Enviando arquivo...");
+
     try {
       const filePath = `${cardId}/${year}-${month.padStart(2, "0")}-${file.name}`;
       const { error: uploadError } = await supabase.storage
         .from("statements")
-        .upload(filePath, file);
+        .upload(filePath, file, { upsert: true });
 
       if (uploadError) throw uploadError;
 
-      const { error: insertError } = await supabase.from("statements").insert({
-        card_id: cardId,
-        month: parseInt(month),
-        year: parseInt(year),
-        file_name: file.name,
-        status: "pending",
-        uploaded_by: user?.id,
-      });
+      setProgress(30);
+      setProcessingStep("Registrando fatura...");
+
+      const { data: statementData, error: insertError } = await supabase
+        .from("statements")
+        .insert({
+          card_id: cardId,
+          month: parseInt(month),
+          year: parseInt(year),
+          file_name: file.name,
+          status: "pending",
+          uploaded_by: user?.id,
+        })
+        .select()
+        .single();
 
       if (insertError) throw insertError;
 
-      toast.success("Fatura enviada com sucesso!");
+      setProgress(50);
+      setProcessingStep("🤖 IA analisando a fatura...");
+
+      // Call AI parsing
+      const { data: parseResult, error: parseError } = await supabase.functions.invoke(
+        "parse-statement",
+        {
+          body: {
+            statement_id: statementData.id,
+            file_path: filePath,
+          },
+        }
+      );
+
+      if (parseError) {
+        throw new Error(parseError.message || "Erro ao processar fatura");
+      }
+
+      if (parseResult?.error) {
+        throw new Error(parseResult.error);
+      }
+
+      setProgress(100);
+      setProcessingStep("Concluído!");
+
+      toast.success(
+        `Fatura processada! ${parseResult.count} lançamentos importados.`
+      );
       queryClient.invalidateQueries({ queryKey: ["statements"] });
+      queryClient.invalidateQueries({ queryKey: ["transactions"] });
       setFile(null);
       setCardId("");
       setMonth("");
     } catch (err: any) {
-      toast.error("Erro ao enviar: " + err.message);
+      toast.error("Erro: " + err.message);
     }
     setUploading(false);
+    setTimeout(() => {
+      setProcessingStep("");
+      setProgress(0);
+    }, 2000);
   };
 
   const statusConfig: Record<string, { icon: any; label: string; className: string }> = {
@@ -93,13 +138,18 @@ export default function StatementUploadPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-heading font-bold">Importar Fatura</h1>
-        <p className="text-muted-foreground text-sm mt-1">Envie faturas em PDF ou texto para processamento</p>
+        <p className="text-muted-foreground text-sm mt-1">
+          Envie faturas em PDF, CSV ou TXT — a IA extrai os lançamentos automaticamente
+        </p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card className="shadow-card lg:col-span-1">
           <CardHeader>
-            <CardTitle className="font-heading text-lg">Nova Importação</CardTitle>
+            <CardTitle className="font-heading text-lg flex items-center gap-2">
+              <Brain className="w-5 h-5 text-primary" />
+              Nova Importação
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleUpload} className="space-y-4">
@@ -132,11 +182,11 @@ export default function StatementUploadPage() {
                 </div>
               </div>
               <div className="space-y-2">
-                <Label>Arquivo (PDF ou TXT)</Label>
+                <Label>Arquivo da Fatura</Label>
                 <div className="border-2 border-dashed border-border rounded-lg p-6 text-center hover:border-primary/50 transition-colors cursor-pointer">
                   <input
                     type="file"
-                    accept=".pdf,.txt,.csv"
+                    accept=".pdf,.txt,.csv,.xlsx,.xls"
                     onChange={(e) => setFile(e.target.files?.[0] || null)}
                     className="hidden"
                     id="file-upload"
@@ -146,14 +196,37 @@ export default function StatementUploadPage() {
                     {file ? (
                       <p className="text-sm font-medium text-foreground">{file.name}</p>
                     ) : (
-                      <p className="text-sm text-muted-foreground">Clique para selecionar o arquivo</p>
+                      <div>
+                        <p className="text-sm text-muted-foreground">Clique para selecionar</p>
+                        <p className="text-xs text-muted-foreground mt-1">PDF, CSV, TXT</p>
+                      </div>
                     )}
                   </label>
                 </div>
               </div>
+
+              {processingStep && (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-sm text-primary">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>{processingStep}</span>
+                  </div>
+                  <Progress value={progress} className="h-2" />
+                </div>
+              )}
+
               <Button type="submit" className="w-full" disabled={uploading}>
-                <Upload className="w-4 h-4 mr-2" />
-                {uploading ? "Enviando..." : "Enviar Fatura"}
+                {uploading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Processando...
+                  </>
+                ) : (
+                  <>
+                    <Upload className="w-4 h-4 mr-2" />
+                    Enviar e Processar com IA
+                  </>
+                )}
               </Button>
             </form>
           </CardContent>
