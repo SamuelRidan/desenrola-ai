@@ -23,6 +23,7 @@ const navItems: NavItem[] = [
   { label: "Transações", href: "/transacoes", icon: <FileText className="w-5 h-5" />, roles: ["admin", "user"] },
   { label: "Despesas Mensais", href: "/despesas", icon: <Receipt className="w-5 h-5" />, roles: ["user"] },
   { label: "Apelidos", href: "/apelidos", icon: <Tag className="w-5 h-5" />, roles: ["admin", "user"] },
+  { label: "Usuários", href: "/usuarios", icon: <Users className="w-5 h-5" />, roles: ["admin"] },
 ];
 
 export default function AppLayout({ children }: { children: ReactNode }) {

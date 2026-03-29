@@ -13,6 +13,7 @@ import StatementUploadPage from "./pages/StatementUploadPage";
 import TransactionsPage from "./pages/TransactionsPage";
 import MonthlyExpensesPage from "./pages/MonthlyExpensesPage";
 import AliasesPage from "./pages/AliasesPage";
+import UsersPage from "./pages/UsersPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -65,6 +66,7 @@ const App = () => (
             <Route path="/transacoes" element={<ProtectedRoute><TransactionsPage /></ProtectedRoute>} />
             <Route path="/despesas" element={<ProtectedRoute><MonthlyExpensesPage /></ProtectedRoute>} />
             <Route path="/apelidos" element={<ProtectedRoute><AliasesPage /></ProtectedRoute>} />
+            <Route path="/usuarios" element={<ProtectedRoute adminOnly><UsersPage /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </AuthProvider>
