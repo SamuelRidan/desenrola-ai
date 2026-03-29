@@ -13,6 +13,7 @@ import StatementUploadPage from "./pages/StatementUploadPage";
 import TransactionsPage from "./pages/TransactionsPage";
 import MonthlyExpensesPage from "./pages/MonthlyExpensesPage";
 import AliasesPage from "./pages/AliasesPage";
+import UsersPage from "./pages/UsersPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
