@@ -25,9 +25,17 @@ Deno.serve(async (req) => {
     const lovableApiKey = Deno.env.get("LOVABLE_API_KEY")!;
 
     // Verify caller is admin
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY") || Deno.env.get("SUPABASE_PUBLISHABLE_KEY");
+    if (!supabaseUrl || !serviceRoleKey || !anonKey) {
+      console.error("Missing env vars:", { url: !!supabaseUrl, srk: !!serviceRoleKey, anon: !!anonKey });
+      return new Response(JSON.stringify({ error: "Erro de configuração do servidor" }), {
+        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const userClient = createClient(
       supabaseUrl,
-      Deno.env.get("SUPABASE_PUBLISHABLE_KEY")!,
+      anonKey,
       { global: { headers: { Authorization: authHeader } } }
     );
     const {
