@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { Search, CheckCircle, Users, Tag } from "lucide-react";
 import { motion } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
+import AssignTransactionDialog from "@/components/AssignTransactionDialog";
 
 export default function TransactionsPage() {
   const { role } = useAuth();
