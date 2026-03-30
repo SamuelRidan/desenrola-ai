@@ -12,12 +12,14 @@ import { toast } from "sonner";
 import { Search, CheckCircle, Users, Tag } from "lucide-react";
 import { motion } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
+import AssignTransactionDialog from "@/components/AssignTransactionDialog";
 
 export default function TransactionsPage() {
   const { role } = useAuth();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [selectedStatement, setSelectedStatement] = useState<string>("all");
+  const [assignTx, setAssignTx] = useState<{ id: string; amount: number; description: string } | null>(null);
 
   const { data: statements } = useQuery({
     queryKey: ["statements-list"],
@@ -155,6 +157,14 @@ export default function TransactionsPage() {
                     </td>
                     <td className="p-4 text-right">
                       <div className="flex items-center justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setAssignTx({ id: t.id, amount: Number(t.amount), description: t.alias || t.description })}
+                          title="Atribuir / Dividir"
+                        >
+                          <Users className="w-4 h-4 text-primary" />
+                        </Button>
                         {!t.is_reviewed && (
                           <Button
                             variant="ghost"
@@ -181,6 +191,11 @@ export default function TransactionsPage() {
           </div>
         </CardContent>
       </Card>
+      <AssignTransactionDialog
+        open={!!assignTx}
+        onOpenChange={(open) => { if (!open) setAssignTx(null); }}
+        transaction={assignTx}
+      />
     </div>
   );
 }
