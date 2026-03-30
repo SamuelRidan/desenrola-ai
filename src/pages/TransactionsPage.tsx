@@ -195,7 +195,7 @@ export default function TransactionsPage() {
                 ))}
                 {(!transactions || transactions.length === 0) && (
                   <tr>
-                    <td colSpan={6} className="p-8 text-center text-muted-foreground text-sm">
+                    <td colSpan={7} className="p-8 text-center text-muted-foreground text-sm">
                       Nenhuma transação encontrada
                     </td>
                   </tr>
