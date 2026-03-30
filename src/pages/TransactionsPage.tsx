@@ -34,7 +34,7 @@ export default function TransactionsPage() {
     queryFn: async () => {
       let query = supabase
         .from("transactions")
-        .select("*, statements(month, year, credit_cards(name))")
+        .select("*, statements(month, year, credit_cards(name)), transaction_assignments(user_id, share_amount, profiles:user_id(full_name))")
         .order("date", { ascending: false })
         .limit(50);
 
@@ -122,7 +122,8 @@ export default function TransactionsPage() {
                   <th className="text-left p-4 text-sm font-medium text-muted-foreground">Data</th>
                   <th className="text-left p-4 text-sm font-medium text-muted-foreground">Descrição</th>
                   <th className="text-left p-4 text-sm font-medium text-muted-foreground">Apelido</th>
-                  <th className="text-right p-4 text-sm font-medium text-muted-foreground">Valor</th>
+                   <th className="text-left p-4 text-sm font-medium text-muted-foreground">Atribuído a</th>
+                   <th className="text-right p-4 text-sm font-medium text-muted-foreground">Valor</th>
                   <th className="text-center p-4 text-sm font-medium text-muted-foreground">Status</th>
                   <th className="text-right p-4 text-sm font-medium text-muted-foreground">Ações</th>
                 </tr>
@@ -137,7 +138,7 @@ export default function TransactionsPage() {
                     className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors"
                   >
                     <td className="p-4 text-sm">{new Date(t.date).toLocaleDateString("pt-BR")}</td>
-                    <td className="p-4 text-sm font-medium max-w-[200px] truncate">{t.description}</td>
+                    <td className="p-4 text-sm font-medium">{t.description}</td>
                     <td className="p-4">
                       {t.alias ? (
                         <Badge variant="secondary" className="text-xs">{t.alias}</Badge>
@@ -145,9 +146,22 @@ export default function TransactionsPage() {
                         <span className="text-xs text-muted-foreground">—</span>
                       )}
                     </td>
-                    <td className="p-4 text-sm text-right font-heading font-semibold">
-                      R$ {Number(t.amount).toFixed(2)}
-                    </td>
+                    <td className="p-4">
+                       {t.transaction_assignments && t.transaction_assignments.length > 0 ? (
+                         <div className="flex flex-wrap gap-1">
+                           {t.transaction_assignments.map((a: any, idx: number) => (
+                             <Badge key={idx} variant="outline" className="text-xs">
+                               {a.profiles?.full_name || "—"}
+                             </Badge>
+                           ))}
+                         </div>
+                       ) : (
+                         <span className="text-xs text-muted-foreground">—</span>
+                       )}
+                     </td>
+                     <td className="p-4 text-sm text-right font-heading font-semibold">
+                       R$ {Number(t.amount).toFixed(2)}
+                     </td>
                     <td className="p-4 text-center">
                       {t.is_reviewed ? (
                         <Badge className="bg-success/10 text-success border-0">Revisada</Badge>
@@ -181,7 +195,7 @@ export default function TransactionsPage() {
                 ))}
                 {(!transactions || transactions.length === 0) && (
                   <tr>
-                    <td colSpan={6} className="p-8 text-center text-muted-foreground text-sm">
+                    <td colSpan={7} className="p-8 text-center text-muted-foreground text-sm">
                       Nenhuma transação encontrada
                     </td>
                   </tr>
