@@ -122,7 +122,8 @@ export default function TransactionsPage() {
                   <th className="text-left p-4 text-sm font-medium text-muted-foreground">Data</th>
                   <th className="text-left p-4 text-sm font-medium text-muted-foreground">Descrição</th>
                   <th className="text-left p-4 text-sm font-medium text-muted-foreground">Apelido</th>
-                  <th className="text-right p-4 text-sm font-medium text-muted-foreground">Valor</th>
+                   <th className="text-left p-4 text-sm font-medium text-muted-foreground">Atribuído a</th>
+                   <th className="text-right p-4 text-sm font-medium text-muted-foreground">Valor</th>
                   <th className="text-center p-4 text-sm font-medium text-muted-foreground">Status</th>
                   <th className="text-right p-4 text-sm font-medium text-muted-foreground">Ações</th>
                 </tr>
