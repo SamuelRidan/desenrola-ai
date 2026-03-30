@@ -157,6 +157,14 @@ export default function TransactionsPage() {
                     </td>
                     <td className="p-4 text-right">
                       <div className="flex items-center justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setAssignTx({ id: t.id, amount: Number(t.amount), description: t.alias || t.description })}
+                          title="Atribuir / Dividir"
+                        >
+                          <Users className="w-4 h-4 text-primary" />
+                        </Button>
                         {!t.is_reviewed && (
                           <Button
                             variant="ghost"
