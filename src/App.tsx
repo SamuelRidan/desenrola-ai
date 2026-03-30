@@ -12,6 +12,7 @@ import CardsPage from "./pages/CardsPage";
 import StatementUploadPage from "./pages/StatementUploadPage";
 import TransactionsPage from "./pages/TransactionsPage";
 import MonthlyExpensesPage from "./pages/MonthlyExpensesPage";
+import ExpenseSplitPage from "./pages/ExpenseSplitPage";
 import AliasesPage from "./pages/AliasesPage";
 import UsersPage from "./pages/UsersPage";
 import NotFound from "./pages/NotFound";
