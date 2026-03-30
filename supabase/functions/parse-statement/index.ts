@@ -325,6 +325,12 @@ async function processAIResponse(
       );
     }
 
+    // Delete any existing transactions for this statement (reprocessing)
+    await adminClient
+      .from("transactions")
+      .delete()
+      .eq("statement_id", statementId);
+
     // Insert transactions
     const transactionsToInsert = transactions.map((t: any) => ({
       statement_id: statementId,

@@ -69,20 +69,55 @@ export default function StatementUploadPage() {
       setProgress(30);
       setProcessingStep("Registrando fatura...");
 
-      const { data: statementData, error: insertError } = await supabase
+      // Check if statement already exists for this card/month/year
+      const { data: existing } = await supabase
         .from("statements")
-        .insert({
-          card_id: cardId,
-          month: parseInt(month),
-          year: parseInt(year),
-          file_name: file.name,
-          status: "pending",
-          uploaded_by: user?.id,
-        })
-        .select()
-        .single();
+        .select("id")
+        .eq("card_id", cardId)
+        .eq("month", parseInt(month))
+        .eq("year", parseInt(year))
+        .maybeSingle();
 
-      if (insertError) throw insertError;
+      let statementData: any;
+
+      if (existing) {
+        // Delete old transactions and update existing statement
+        const { error: delTxError } = await supabase
+          .from("transactions")
+          .delete()
+          .eq("statement_id", existing.id);
+        // Note: delete may fail due to RLS, edge function will handle via adminClient
+
+        const { data: updated, error: updateError } = await supabase
+          .from("statements")
+          .update({
+            file_name: file.name,
+            status: "pending",
+            uploaded_by: user?.id,
+          })
+          .eq("id", existing.id)
+          .select()
+          .single();
+
+        if (updateError) throw updateError;
+        statementData = updated;
+      } else {
+        const { data: inserted, error: insertError } = await supabase
+          .from("statements")
+          .insert({
+            card_id: cardId,
+            month: parseInt(month),
+            year: parseInt(year),
+            file_name: file.name,
+            status: "pending",
+            uploaded_by: user?.id,
+          })
+          .select()
+          .single();
+
+        if (insertError) throw insertError;
+        statementData = inserted;
+      }
 
       setProgress(50);
       setProcessingStep("🤖 IA analisando a fatura...");
