@@ -22,6 +22,7 @@ const navItems: NavItem[] = [
   { label: "Importar Fatura", href: "/importar", icon: <Upload className="w-5 h-5" />, roles: ["admin"] },
   { label: "Transações", href: "/transacoes", icon: <FileText className="w-5 h-5" />, roles: ["admin", "user"] },
   { label: "Despesas Mensais", href: "/despesas", icon: <Receipt className="w-5 h-5" />, roles: ["user"] },
+  { label: "Divisão de Despesas", href: "/divisao", icon: <Users className="w-5 h-5" />, roles: ["admin", "user"] },
   { label: "Apelidos", href: "/apelidos", icon: <Tag className="w-5 h-5" />, roles: ["admin", "user"] },
   { label: "Usuários", href: "/usuarios", icon: <Users className="w-5 h-5" />, roles: ["admin"] },
 ];

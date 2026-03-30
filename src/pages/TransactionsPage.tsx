@@ -191,6 +191,11 @@ export default function TransactionsPage() {
           </div>
         </CardContent>
       </Card>
+      <AssignTransactionDialog
+        open={!!assignTx}
+        onOpenChange={(open) => { if (!open) setAssignTx(null); }}
+        transaction={assignTx}
+      />
     </div>
   );
 }
