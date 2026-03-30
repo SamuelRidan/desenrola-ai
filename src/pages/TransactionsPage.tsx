@@ -19,6 +19,7 @@ export default function TransactionsPage() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [selectedStatement, setSelectedStatement] = useState<string>("all");
+  const [assignTx, setAssignTx] = useState<{ id: string; amount: number; description: string } | null>(null);
 
   const { data: statements } = useQuery({
     queryKey: ["statements-list"],
