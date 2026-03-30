@@ -146,9 +146,22 @@ export default function TransactionsPage() {
                         <span className="text-xs text-muted-foreground">—</span>
                       )}
                     </td>
-                    <td className="p-4 text-sm text-right font-heading font-semibold">
-                      R$ {Number(t.amount).toFixed(2)}
-                    </td>
+                    <td className="p-4">
+                       {t.transaction_assignments && t.transaction_assignments.length > 0 ? (
+                         <div className="flex flex-wrap gap-1">
+                           {t.transaction_assignments.map((a: any, idx: number) => (
+                             <Badge key={idx} variant="outline" className="text-xs">
+                               {a.profiles?.full_name || "—"}
+                             </Badge>
+                           ))}
+                         </div>
+                       ) : (
+                         <span className="text-xs text-muted-foreground">—</span>
+                       )}
+                     </td>
+                     <td className="p-4 text-sm text-right font-heading font-semibold">
+                       R$ {Number(t.amount).toFixed(2)}
+                     </td>
                     <td className="p-4 text-center">
                       {t.is_reviewed ? (
                         <Badge className="bg-success/10 text-success border-0">Revisada</Badge>
