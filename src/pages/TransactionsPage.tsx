@@ -224,7 +224,7 @@ export default function TransactionsPage() {
                          <div className="flex flex-wrap gap-1">
                            {t.transaction_assignments.map((a: any, idx: number) => (
                              <Badge key={idx} variant="outline" className="text-xs">
-                               {a.profiles?.full_name || "—"}
+                               {profileMap[a.user_id] || "—"}
                              </Badge>
                            ))}
                          </div>
