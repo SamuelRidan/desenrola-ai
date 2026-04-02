@@ -80,12 +80,78 @@ export default function TransactionsPage() {
     },
   });
 
+  const summary = useMemo(() => {
+    if (!transactions || transactions.length === 0) return null;
+    const total = transactions.reduce((sum: number, t: any) => sum + Number(t.amount), 0);
+    const byUser: Record<string, { name: string; total: number }> = {};
+    let unassignedTotal = 0;
+
+    for (const t of transactions) {
+      const assigns = t.transaction_assignments;
+      if (assigns && assigns.length > 0) {
+        for (const a of assigns) {
+          const uid = a.user_id;
+          const name = a.profiles?.full_name || "Sem nome";
+          if (!byUser[uid]) byUser[uid] = { name, total: 0 };
+          byUser[uid].total += Number(a.share_amount);
+        }
+      } else {
+        unassignedTotal += Number(t.amount);
+      }
+    }
+
+    return { total, byUser, unassignedTotal };
+  }, [transactions]);
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-heading font-bold">Transações</h1>
         <p className="text-muted-foreground text-sm mt-1">Visualize e gerencie todas as transações</p>
       </div>
+
+      {/* Summary Cards */}
+      {summary && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <Card className="shadow-card">
+            <CardContent className="p-4 flex items-center gap-3">
+              <div className="rounded-full bg-primary/10 p-2">
+                <DollarSign className="w-5 h-5 text-primary" />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Total da Fatura</p>
+                <p className="text-lg font-heading font-bold">R$ {summary.total.toFixed(2)}</p>
+              </div>
+            </CardContent>
+          </Card>
+          {Object.entries(summary.byUser).map(([uid, info]) => (
+            <Card key={uid} className="shadow-card">
+              <CardContent className="p-4 flex items-center gap-3">
+                <div className="rounded-full bg-accent/50 p-2">
+                  <User className="w-5 h-5 text-accent-foreground" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">{info.name}</p>
+                  <p className="text-lg font-heading font-bold">R$ {info.total.toFixed(2)}</p>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+          {summary.unassignedTotal > 0 && (
+            <Card className="shadow-card border-dashed">
+              <CardContent className="p-4 flex items-center gap-3">
+                <div className="rounded-full bg-muted p-2">
+                  <Users className="w-5 h-5 text-muted-foreground" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Não atribuído</p>
+                  <p className="text-lg font-heading font-bold">R$ {summary.unassignedTotal.toFixed(2)}</p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
 
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
