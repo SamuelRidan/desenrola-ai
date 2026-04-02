@@ -80,6 +80,14 @@ export default function TransactionsPage() {
     },
   });
 
+  const profileMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const p of profiles ?? []) {
+      map[p.user_id] = p.full_name;
+    }
+    return map;
+  }, [profiles]);
+
   const summary = useMemo(() => {
     if (!transactions || transactions.length === 0) return null;
     const total = transactions.reduce((sum: number, t: any) => sum + Number(t.amount), 0);
@@ -91,7 +99,7 @@ export default function TransactionsPage() {
       if (assigns && assigns.length > 0) {
         for (const a of assigns) {
           const uid = a.user_id;
-          const name = a.profiles?.full_name || "Sem nome";
+          const name = profileMap[uid] || "Sem nome";
           if (!byUser[uid]) byUser[uid] = { name, total: 0 };
           byUser[uid].total += Number(a.share_amount);
         }
@@ -101,7 +109,7 @@ export default function TransactionsPage() {
     }
 
     return { total, byUser, unassignedTotal };
-  }, [transactions]);
+  }, [transactions, profileMap]);
 
   return (
     <div className="space-y-6">
