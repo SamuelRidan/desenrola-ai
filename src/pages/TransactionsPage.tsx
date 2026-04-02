@@ -33,7 +33,7 @@ export default function TransactionsPage() {
     queryFn: async () => {
       let query = supabase
         .from("transactions")
-        .select("*, statements(month, year, credit_cards(name)), transaction_assignments(user_id, share_amount, profiles:user_id(full_name))")
+        .select("*, statements(month, year, credit_cards(name)), transaction_assignments(user_id, share_amount, profiles(full_name))")
         .order("date", { ascending: false })
         .limit(50);
 
