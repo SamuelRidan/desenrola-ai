@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -6,10 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Search, CheckCircle, Users, Tag } from "lucide-react";
+import { Search, CheckCircle, Users, DollarSign, User } from "lucide-react";
 import { motion } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
 import AssignTransactionDialog from "@/components/AssignTransactionDialog";
@@ -34,7 +33,7 @@ export default function TransactionsPage() {
     queryFn: async () => {
       let query = supabase
         .from("transactions")
-        .select("*, statements(month, year, credit_cards(name)), transaction_assignments(user_id, share_amount, profiles:user_id(full_name))")
+        .select("*, statements(month, year, credit_cards(name)), transaction_assignments(user_id, share_amount)")
         .order("date", { ascending: false })
         .limit(50);
 
@@ -81,12 +80,86 @@ export default function TransactionsPage() {
     },
   });
 
+  const profileMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const p of profiles ?? []) {
+      map[p.user_id] = p.full_name;
+    }
+    return map;
+  }, [profiles]);
+
+  const summary = useMemo(() => {
+    if (!transactions || transactions.length === 0) return null;
+    const total = transactions.reduce((sum: number, t: any) => sum + Number(t.amount), 0);
+    const byUser: Record<string, { name: string; total: number }> = {};
+    let unassignedTotal = 0;
+
+    for (const t of transactions) {
+      const assigns = t.transaction_assignments;
+      if (assigns && assigns.length > 0) {
+        for (const a of assigns) {
+          const uid = a.user_id;
+          const name = profileMap[uid] || "Sem nome";
+          if (!byUser[uid]) byUser[uid] = { name, total: 0 };
+          byUser[uid].total += Number(a.share_amount);
+        }
+      } else {
+        unassignedTotal += Number(t.amount);
+      }
+    }
+
+    return { total, byUser, unassignedTotal };
+  }, [transactions, profileMap]);
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-heading font-bold">Transações</h1>
         <p className="text-muted-foreground text-sm mt-1">Visualize e gerencie todas as transações</p>
       </div>
+
+      {/* Summary Cards */}
+      {summary && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <Card className="shadow-card">
+            <CardContent className="p-4 flex items-center gap-3">
+              <div className="rounded-full bg-primary/10 p-2">
+                <DollarSign className="w-5 h-5 text-primary" />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Total da Fatura</p>
+                <p className="text-lg font-heading font-bold">R$ {summary.total.toFixed(2)}</p>
+              </div>
+            </CardContent>
+          </Card>
+          {Object.entries(summary.byUser).map(([uid, info]) => (
+            <Card key={uid} className="shadow-card">
+              <CardContent className="p-4 flex items-center gap-3">
+                <div className="rounded-full bg-accent/50 p-2">
+                  <User className="w-5 h-5 text-accent-foreground" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">{info.name}</p>
+                  <p className="text-lg font-heading font-bold">R$ {info.total.toFixed(2)}</p>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+          {summary.unassignedTotal > 0 && (
+            <Card className="shadow-card border-dashed">
+              <CardContent className="p-4 flex items-center gap-3">
+                <div className="rounded-full bg-muted p-2">
+                  <Users className="w-5 h-5 text-muted-foreground" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Não atribuído</p>
+                  <p className="text-lg font-heading font-bold">R$ {summary.unassignedTotal.toFixed(2)}</p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
 
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
@@ -151,7 +224,7 @@ export default function TransactionsPage() {
                          <div className="flex flex-wrap gap-1">
                            {t.transaction_assignments.map((a: any, idx: number) => (
                              <Badge key={idx} variant="outline" className="text-xs">
-                               {a.profiles?.full_name || "—"}
+                               {profileMap[a.user_id] || "—"}
                              </Badge>
                            ))}
                          </div>
