@@ -131,22 +131,24 @@ Deno.serve(async (req) => {
             messages: [
               {
                 role: "system",
-                content: `Você é um assistente especializado em extrair lançamentos de faturas de cartão de crédito.
-Analise o documento da fatura e extraia TODOS os lançamentos/transações.
+                content: `Você é um assistente especializado em extrair TODOS os lançamentos de faturas de cartão de crédito.
 
-IMPORTANTE: Responda APENAS com um JSON válido, sem markdown, sem backticks, sem texto extra.
-O JSON deve ser um array de objetos com exatamente estes campos:
-- "date": data no formato "YYYY-MM-DD"
-- "description": descrição do lançamento (texto original da fatura)
-- "amount": valor numérico positivo (sem símbolo de moeda)
-- "category": categoria sugerida (ex: "Alimentação", "Transporte", "Compras", "Saúde", "Lazer", "Serviços", "Educação", "Outros")
+REGRAS CRÍTICAS:
+1. Extraia ABSOLUTAMENTE TODOS os lançamentos da fatura, sem exceção. Não pule nenhum.
+2. Inclua compras nacionais e internacionais, parcelamentos, assinaturas, seguros, anuidades.
+3. NÃO ignore nenhum lançamento. Se houver 50 lançamentos na fatura, retorne 50.
+4. Ignore APENAS: linha de "Total", "Pagamento anterior", "Saldo anterior", "Encargos financeiros/juros de mora".
+5. Valores em moeda estrangeira devem usar o valor em reais (BRL) quando disponível.
+6. Para parcelamentos (ex: "PARCELA 3/10"), inclua cada parcela como um lançamento individual.
 
-Exemplo de resposta:
-[{"date":"2025-01-15","description":"RESTAURANTE XYZ","amount":45.90,"category":"Alimentação"}]
+FORMATO: Responda APENAS com um JSON array válido, sem markdown, sem backticks.
+Cada objeto deve ter:
+- "date": "YYYY-MM-DD" (se não souber a data exata, use o primeiro dia do mês)
+- "description": descrição COMPLETA e ORIGINAL como aparece na fatura
+- "amount": valor numérico positivo (sem R$, use ponto como separador decimal)
+- "category": uma de: "Alimentação", "Transporte", "Compras", "Saúde", "Lazer", "Serviços", "Educação", "Moradia", "Assinatura", "Outros"
 
-Se não conseguir identificar a data exata, use o primeiro dia do mês da fatura.
-Ignore linhas que são totais, pagamentos, encargos ou juros.
-Extraia apenas os lançamentos de compras.`,
+Exemplo: [{"date":"2025-01-15","description":"RESTAURANTE XYZ","amount":45.90,"category":"Alimentação"}]`,
               },
               {
                 role: "user",
@@ -224,22 +226,24 @@ Extraia apenas os lançamentos de compras.`,
             messages: [
               {
                 role: "system",
-                content: `Você é um assistente especializado em extrair lançamentos de faturas de cartão de crédito.
-Analise o texto da fatura e extraia TODOS os lançamentos/transações.
+                content: `Você é um assistente especializado em extrair TODOS os lançamentos de faturas de cartão de crédito.
 
-IMPORTANTE: Responda APENAS com um JSON válido, sem markdown, sem backticks, sem texto extra.
-O JSON deve ser um array de objetos com exatamente estes campos:
-- "date": data no formato "YYYY-MM-DD"  
-- "description": descrição do lançamento (texto original da fatura)
-- "amount": valor numérico positivo (sem símbolo de moeda)
-- "category": categoria sugerida (ex: "Alimentação", "Transporte", "Compras", "Saúde", "Lazer", "Serviços", "Educação", "Outros")
+REGRAS CRÍTICAS:
+1. Extraia ABSOLUTAMENTE TODOS os lançamentos da fatura, sem exceção. Não pule nenhum.
+2. Inclua compras nacionais e internacionais, parcelamentos, assinaturas, seguros, anuidades.
+3. NÃO ignore nenhum lançamento. Se houver 50 lançamentos na fatura, retorne 50.
+4. Ignore APENAS: linha de "Total", "Pagamento anterior", "Saldo anterior", "Encargos financeiros/juros de mora".
+5. Valores em moeda estrangeira devem usar o valor em reais (BRL) quando disponível.
+6. Para parcelamentos (ex: "PARCELA 3/10"), inclua cada parcela como um lançamento individual.
 
-Exemplo de resposta:
-[{"date":"2025-01-15","description":"RESTAURANTE XYZ","amount":45.90,"category":"Alimentação"}]
+FORMATO: Responda APENAS com um JSON array válido, sem markdown, sem backticks.
+Cada objeto deve ter:
+- "date": "YYYY-MM-DD" (se não souber a data exata, use o primeiro dia do mês)
+- "description": descrição COMPLETA e ORIGINAL como aparece na fatura
+- "amount": valor numérico positivo (sem R$, use ponto como separador decimal)
+- "category": uma de: "Alimentação", "Transporte", "Compras", "Saúde", "Lazer", "Serviços", "Educação", "Moradia", "Assinatura", "Outros"
 
-Se não conseguir identificar a data exata, use o primeiro dia do mês da fatura.
-Ignore linhas que são totais, pagamentos, encargos ou juros.
-Extraia apenas os lançamentos de compras.`,
+Exemplo: [{"date":"2025-01-15","description":"RESTAURANTE XYZ","amount":45.90,"category":"Alimentação"}]`,
               },
               {
                 role: "user",
