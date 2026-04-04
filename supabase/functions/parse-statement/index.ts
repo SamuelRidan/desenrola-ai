@@ -350,12 +350,14 @@ async function processAIResponse(
       .eq("statement_id", statementId);
 
     // Insert transactions
+    const validTypes = ["purchase", "payment", "interest"];
     const transactionsToInsert = transactions.map((t: any) => ({
       statement_id: statementId,
       date: t.date,
       description: t.description,
       amount: Math.abs(Number(t.amount)),
       category: t.category || null,
+      type: validTypes.includes(t.type) ? t.type : "purchase",
       is_reviewed: false,
     }));
 
