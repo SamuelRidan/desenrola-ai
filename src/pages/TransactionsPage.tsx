@@ -274,6 +274,7 @@ export default function TransactionsPage() {
                 <tr className="border-b border-border bg-muted/30">
                   <th className="text-left p-3 font-medium text-muted-foreground whitespace-nowrap">Data</th>
                   <th className="text-left p-3 font-medium text-muted-foreground">Descrição</th>
+                  <th className="text-left p-3 font-medium text-muted-foreground whitespace-nowrap">Tipo</th>
                   <th className="text-left p-3 font-medium text-muted-foreground whitespace-nowrap">Categoria</th>
                   <th className="text-left p-3 font-medium text-muted-foreground whitespace-nowrap">Atribuído a</th>
                   <th className="text-right p-3 font-medium text-muted-foreground whitespace-nowrap">Valor</th>
