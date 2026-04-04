@@ -284,7 +284,7 @@ export default function TransactionsPage() {
               <tbody>
                 {isLoading ? (
                   <tr>
-                    <td colSpan={6} className="p-8 text-center text-muted-foreground">Carregando...</td>
+                    <td colSpan={7} className="p-8 text-center text-muted-foreground">Carregando...</td>
                   </tr>
                 ) : transactions && transactions.length > 0 ? (
                   transactions.map((t: any, i: number) => (
