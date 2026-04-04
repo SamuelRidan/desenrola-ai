@@ -97,13 +97,22 @@ export default function TransactionsPage() {
 
   const summary = useMemo(() => {
     if (!transactions || transactions.length === 0) return null;
-    const total = transactions.reduce((sum: number, t: any) => sum + Number(t.amount), 0);
+    
+    let purchases = 0;
+    let payments = 0;
+    let interest = 0;
     const byUser: Record<string, { name: string; total: number }> = {};
     let assignedTotal = 0;
 
     for (const t of transactions) {
+      const amt = Number(t.amount);
+      const type = (t as any).type || "purchase";
+      if (type === "payment") payments += amt;
+      else if (type === "interest") interest += amt;
+      else purchases += amt;
+
       const assigns = (t as any).transaction_assignments;
-      if (assigns && assigns.length > 0) {
+      if (assigns && assigns.length > 0 && type === "purchase") {
         for (const a of assigns) {
           const uid = a.user_id;
           const name = profileMap[uid] || "Sem nome";
@@ -114,8 +123,9 @@ export default function TransactionsPage() {
       }
     }
 
-    const unassignedTotal = total - assignedTotal;
-    return { total, byUser, unassignedTotal, count: transactions.length };
+    const openBalance = purchases + interest - payments;
+    const unassignedTotal = purchases - assignedTotal;
+    return { purchases, payments, interest, openBalance, byUser, unassignedTotal, count: transactions.length };
   }, [transactions, profileMap]);
 
   return (
