@@ -11,7 +11,13 @@ import { Plus } from "lucide-react";
 
 const CATEGORIES = [
   "Alimentação", "Transporte", "Compras", "Saúde",
-  "Lazer", "Serviços", "Educação", "Moradia", "Outros"
+  "Lazer", "Serviços", "Educação", "Moradia", "Juros/Encargos", "Pagamento", "Outros"
+];
+
+const TYPES = [
+  { value: "purchase", label: "Compra" },
+  { value: "payment", label: "Pagamento" },
+  { value: "interest", label: "Juros / Encargos" },
 ];
 
 interface Props {
@@ -26,6 +32,7 @@ export default function AddTransactionDialog({ open, onOpenChange, statementId }
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
   const [category, setCategory] = useState("");
+  const [type, setType] = useState("purchase");
 
   const addMutation = useMutation({
     mutationFn: async () => {
@@ -36,6 +43,7 @@ export default function AddTransactionDialog({ open, onOpenChange, statementId }
         description: description.trim(),
         amount: Math.abs(parseFloat(amount)),
         category: category || null,
+        type,
         is_reviewed: false,
       });
       if (error) throw error;
@@ -47,6 +55,7 @@ export default function AddTransactionDialog({ open, onOpenChange, statementId }
       setDescription("");
       setAmount("");
       setCategory("");
+      setType("purchase");
       onOpenChange(false);
     },
     onError: (err: any) => toast.error(err.message || "Erro ao adicionar"),
@@ -69,6 +78,17 @@ export default function AddTransactionDialog({ open, onOpenChange, statementId }
           <div className="space-y-2">
             <Label>Descrição *</Label>
             <Input placeholder="Ex: RESTAURANTE XYZ" value={description} onChange={(e) => setDescription(e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>Tipo *</Label>
+            <Select value={type} onValueChange={setType}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {TYPES.map((t) => (
+                  <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
