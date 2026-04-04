@@ -79,6 +79,17 @@ export default function AddTransactionDialog({ open, onOpenChange, statementId }
             <Label>Descrição *</Label>
             <Input placeholder="Ex: RESTAURANTE XYZ" value={description} onChange={(e) => setDescription(e.target.value)} />
           </div>
+          <div className="space-y-2">
+            <Label>Tipo *</Label>
+            <Select value={type} onValueChange={setType}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {TYPES.map((t) => (
+                  <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
               <Label>Valor (R$) *</Label>
