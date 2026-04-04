@@ -338,8 +338,8 @@ export default function TransactionsPage() {
                           <span className="text-muted-foreground">—</span>
                         )}
                       </td>
-                      <td className="p-3 text-right font-heading font-semibold whitespace-nowrap">
-                        R$ {Number(t.amount).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                      <td className={`p-3 text-right font-heading font-semibold whitespace-nowrap ${t.type === "payment" ? "text-green-600" : t.type === "interest" ? "text-destructive" : ""}`}>
+                        {t.type === "payment" ? "- " : ""}R$ {Number(t.amount).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                       </td>
                       <td className="p-3">
                         <div className="flex items-center justify-center gap-0.5 opacity-60 group-hover:opacity-100 transition-opacity">
