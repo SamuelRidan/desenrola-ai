@@ -7,11 +7,30 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Search, CheckCircle, Users, DollarSign, User, Plus, Trash2, CreditCard, TrendingDown, AlertTriangle, Wallet } from "lucide-react";
+import { Search, CheckCircle, Users, DollarSign, User, Plus, Trash2, CreditCard, AlertTriangle, Wallet, Scissors, Receipt } from "lucide-react";
 import { motion } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
 import AssignTransactionDialog from "@/components/AssignTransactionDialog";
 import AddTransactionDialog from "@/components/AddTransactionDialog";
+
+const USER_COLORS = [
+  { bg: "bg-violet-500/15", text: "text-violet-600", border: "border-violet-500/25", ring: "ring-violet-500/20" },
+  { bg: "bg-sky-500/15", text: "text-sky-600", border: "border-sky-500/25", ring: "ring-sky-500/20" },
+  { bg: "bg-amber-500/15", text: "text-amber-600", border: "border-amber-500/25", ring: "ring-amber-500/20" },
+  { bg: "bg-rose-500/15", text: "text-rose-600", border: "border-rose-500/25", ring: "ring-rose-500/20" },
+  { bg: "bg-emerald-500/15", text: "text-emerald-600", border: "border-emerald-500/25", ring: "ring-emerald-500/20" },
+  { bg: "bg-indigo-500/15", text: "text-indigo-600", border: "border-indigo-500/25", ring: "ring-indigo-500/20" },
+];
+
+function getInitials(name: string) {
+  return name
+    .split(" ")
+    .map((w) => w[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+}
 
 export default function TransactionsPage() {
   const { role } = useAuth();
@@ -75,7 +94,6 @@ export default function TransactionsPage() {
 
   const deleteTx = useMutation({
     mutationFn: async (id: string) => {
-      // Delete assignments first, then transaction
       await supabase.from("transaction_assignments").delete().eq("transaction_id", id);
       const { error } = await supabase.from("transactions").delete().eq("id", id);
       if (error) throw error;
@@ -95,13 +113,23 @@ export default function TransactionsPage() {
     return map;
   }, [profiles]);
 
+  // Stable color map per user id
+  const userColorMap = useMemo(() => {
+    const map: Record<string, typeof USER_COLORS[0]> = {};
+    const userIds = Object.keys(profileMap);
+    userIds.forEach((uid, i) => {
+      map[uid] = USER_COLORS[i % USER_COLORS.length];
+    });
+    return map;
+  }, [profileMap]);
+
   const summary = useMemo(() => {
     if (!transactions || transactions.length === 0) return null;
-    
+
     let purchases = 0;
     let payments = 0;
     let interest = 0;
-    const byUser: Record<string, { name: string; total: number }> = {};
+    const byUser: Record<string, { name: string; total: number; txCount: number }> = {};
     let assignedTotal = 0;
 
     for (const t of transactions) {
@@ -111,15 +139,15 @@ export default function TransactionsPage() {
       else if (type === "interest") interest += amt;
       else purchases += amt;
 
-      // Count assignments for purchases and interest (not payments)
       const assigns = t.transaction_assignments;
       if (assigns && assigns.length > 0 && type !== "payment") {
         for (const a of assigns) {
           const uid = a.user_id;
           const share = Number(a.share_amount) || 0;
           const name = profileMap[uid] || "Sem nome";
-          if (!byUser[uid]) byUser[uid] = { name, total: 0 };
+          if (!byUser[uid]) byUser[uid] = { name, total: 0, txCount: 0 };
           byUser[uid].total += share;
+          byUser[uid].txCount += 1;
           assignedTotal += share;
         }
       }
@@ -128,8 +156,10 @@ export default function TransactionsPage() {
     const totalCharges = purchases + interest;
     const openBalance = totalCharges - payments;
     const unassignedTotal = totalCharges - assignedTotal;
-    return { purchases, payments, interest, openBalance, totalCharges, byUser, unassignedTotal, count: transactions.length };
+    return { purchases, payments, interest, openBalance, totalCharges, byUser, unassignedTotal, assignedTotal, count: transactions.length };
   }, [transactions, profileMap]);
+
+  const formatBRL = (v: number) => v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   return (
     <div className="space-y-5">
@@ -149,100 +179,159 @@ export default function TransactionsPage() {
         )}
       </div>
 
-      {/* Summary Cards */}
+      {/* Summary Section - Hero + Cards */}
       {summary && (
-        <div className="space-y-3">
-          {/* Financial Overview */}
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-            <Card className="shadow-card bg-primary/5 border-primary/20">
-              <CardContent className="p-4 flex items-center gap-3">
-                <div className="rounded-full bg-primary/10 p-2 shrink-0">
-                  <CreditCard className="w-5 h-5 text-primary" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-xs text-muted-foreground truncate">Compras</p>
-                  <p className="text-lg font-heading font-bold">
-                    R$ {summary.purchases.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="shadow-card bg-green-500/5 border-green-500/20">
-              <CardContent className="p-4 flex items-center gap-3">
-                <div className="rounded-full bg-green-500/10 p-2 shrink-0">
-                  <Wallet className="w-5 h-5 text-green-600" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-xs text-muted-foreground truncate">Pagamentos</p>
-                  <p className="text-lg font-heading font-bold text-green-600">
-                    - R$ {summary.payments.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-            {summary.interest > 0 && (
-              <Card className="shadow-card bg-destructive/5 border-destructive/20">
-                <CardContent className="p-4 flex items-center gap-3">
-                  <div className="rounded-full bg-destructive/10 p-2 shrink-0">
-                    <AlertTriangle className="w-5 h-5 text-destructive" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-xs text-muted-foreground truncate">Juros / Encargos</p>
-                    <p className="text-lg font-heading font-bold text-destructive">
-                      R$ {summary.interest.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+        <div className="space-y-4">
+          {/* Hero: Total da Fatura */}
+          <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
+            <Card className="shadow-elevated overflow-hidden border-0">
+              <div className="gradient-primary p-6 sm:p-8">
+                <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="p-2 rounded-full bg-white/15 backdrop-blur-sm">
+                        <Receipt className="w-5 h-5 text-white" />
+                      </div>
+                      <p className="text-white/80 text-sm font-medium tracking-wide uppercase">Total da Fatura</p>
+                    </div>
+                    <p className="text-4xl sm:text-5xl font-heading font-bold text-white tracking-tight">
+                      R$ {formatBRL(summary.totalCharges)}
                     </p>
+                    {summary.payments > 0 && (
+                      <p className="text-white/60 text-sm mt-2">
+                        Pagamentos realizados: <span className="text-white/90 font-medium">- R$ {formatBRL(summary.payments)}</span>
+                      </p>
+                    )}
                   </div>
-                </CardContent>
-              </Card>
-            )}
-            <Card className={`shadow-card ${summary.openBalance > 0 ? "bg-orange-500/5 border-orange-500/20" : "bg-green-500/5 border-green-500/20"}`}>
-              <CardContent className="p-4 flex items-center gap-3">
-                <div className={`rounded-full p-2 shrink-0 ${summary.openBalance > 0 ? "bg-orange-500/10" : "bg-green-500/10"}`}>
-                  <DollarSign className={`w-5 h-5 ${summary.openBalance > 0 ? "text-orange-600" : "text-green-600"}`} />
+                  {summary.openBalance > 0 && (
+                    <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 border border-white/10">
+                      <p className="text-white/70 text-xs font-medium uppercase tracking-wide">Saldo em Aberto</p>
+                      <p className="text-2xl font-heading font-bold text-white mt-0.5">
+                        R$ {formatBRL(summary.openBalance)}
+                      </p>
+                    </div>
+                  )}
                 </div>
-                <div className="min-w-0">
-                  <p className="text-xs text-muted-foreground truncate">Saldo em Aberto</p>
-                  <p className={`text-lg font-heading font-bold ${summary.openBalance > 0 ? "text-orange-600" : "text-green-600"}`}>
-                    R$ {summary.openBalance.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-                  </p>
-                </div>
-              </CardContent>
+              </div>
             </Card>
-            {summary.unassignedTotal > 0.01 && (
-              <Card className="shadow-card border-dashed">
+          </motion.div>
+
+          {/* Secondary stats row */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
+              <Card className="shadow-card bg-primary/5 border-primary/20 h-full">
                 <CardContent className="p-4 flex items-center gap-3">
-                  <div className="rounded-full bg-muted p-2 shrink-0">
-                    <Users className="w-4 h-4 text-muted-foreground" />
+                  <div className="rounded-full bg-primary/10 p-2 shrink-0">
+                    <CreditCard className="w-5 h-5 text-primary" />
                   </div>
                   <div className="min-w-0">
-                    <p className="text-xs text-muted-foreground truncate">Não atribuído</p>
+                    <p className="text-xs text-muted-foreground truncate">Compras</p>
                     <p className="text-lg font-heading font-bold">
-                      R$ {summary.unassignedTotal.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                      R$ {formatBRL(summary.purchases)}
                     </p>
                   </div>
                 </CardContent>
               </Card>
-            )}
-          </div>
-          {/* Per-user breakdown */}
-          {Object.keys(summary.byUser).length > 0 && (
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-              {Object.entries(summary.byUser).map(([uid, info]) => (
-                <Card key={uid} className="shadow-card">
+            </motion.div>
+            <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
+              <Card className="shadow-card bg-green-500/5 border-green-500/20 h-full">
+                <CardContent className="p-4 flex items-center gap-3">
+                  <div className="rounded-full bg-green-500/10 p-2 shrink-0">
+                    <Wallet className="w-5 h-5 text-green-600" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs text-muted-foreground truncate">Pagamentos</p>
+                    <p className="text-lg font-heading font-bold text-green-600">
+                      - R$ {formatBRL(summary.payments)}
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+            {summary.interest > 0 && (
+              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
+                <Card className="shadow-card bg-destructive/5 border-destructive/20 h-full">
                   <CardContent className="p-4 flex items-center gap-3">
-                    <div className="rounded-full bg-accent/50 p-2 shrink-0">
-                      <User className="w-4 h-4 text-accent-foreground" />
+                    <div className="rounded-full bg-destructive/10 p-2 shrink-0">
+                      <AlertTriangle className="w-5 h-5 text-destructive" />
                     </div>
                     <div className="min-w-0">
-                      <p className="text-xs text-muted-foreground truncate">{info.name}</p>
-                      <p className="text-lg font-heading font-bold">
-                        R$ {info.total.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                      <p className="text-xs text-muted-foreground truncate">Juros / Encargos</p>
+                      <p className="text-lg font-heading font-bold text-destructive">
+                        R$ {formatBRL(summary.interest)}
                       </p>
                     </div>
                   </CardContent>
                 </Card>
-              ))}
-            </div>
+              </motion.div>
+            )}
+            {summary.unassignedTotal > 0.01 && (
+              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
+                <Card className="shadow-card border-dashed border-warning/40 h-full">
+                  <CardContent className="p-4 flex items-center gap-3">
+                    <div className="rounded-full bg-warning/10 p-2 shrink-0">
+                      <AlertTriangle className="w-4 h-4 text-warning" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs text-muted-foreground truncate">Não atribuído</p>
+                      <p className="text-lg font-heading font-bold text-warning">
+                        R$ {formatBRL(summary.unassignedTotal)}
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            )}
+          </div>
+
+          {/* Per-user breakdown — emphasized */}
+          {Object.keys(summary.byUser).length > 0 && (
+            <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}>
+              <Card className="shadow-card">
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Users className="w-4 h-4 text-muted-foreground" />
+                    <p className="text-sm font-medium text-muted-foreground">Valor por Pessoa</p>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {Object.entries(summary.byUser).map(([uid, info], idx) => {
+                      const colors = userColorMap[uid] || USER_COLORS[0];
+                      const percent = summary.totalCharges > 0 ? (info.total / summary.totalCharges) * 100 : 0;
+                      return (
+                        <motion.div
+                          key={uid}
+                          initial={{ opacity: 0, scale: 0.95 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          transition={{ delay: 0.3 + idx * 0.05 }}
+                          className={`relative rounded-xl border ${colors.border} ${colors.bg} p-4 overflow-hidden`}
+                        >
+                          {/* Progress bar background */}
+                          <div
+                            className={`absolute bottom-0 left-0 h-1 ${colors.bg} opacity-60`}
+                            style={{ width: `${Math.min(percent, 100)}%`, background: `hsl(var(--primary) / 0.3)` }}
+                          />
+                          <div className="flex items-center gap-3">
+                            <div className={`w-10 h-10 rounded-full ${colors.bg} ${colors.text} flex items-center justify-center text-sm font-bold ring-2 ${colors.ring}`}>
+                              {getInitials(info.name)}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium truncate">{info.name}</p>
+                              <p className="text-xs text-muted-foreground">{info.txCount} lançamento{info.txCount !== 1 ? "s" : ""}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className={`text-xl font-heading font-bold ${colors.text}`}>
+                                R$ {formatBRL(info.total)}
+                              </p>
+                              <p className="text-xs text-muted-foreground">{percent.toFixed(0)}% do total</p>
+                            </div>
+                          </div>
+                        </motion.div>
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
           )}
         </div>
       )}
@@ -281,7 +370,7 @@ export default function TransactionsPage() {
                   <th className="text-left p-3 font-medium text-muted-foreground whitespace-nowrap">Categoria</th>
                   <th className="text-left p-3 font-medium text-muted-foreground whitespace-nowrap">Atribuído a</th>
                   <th className="text-right p-3 font-medium text-muted-foreground whitespace-nowrap">Valor</th>
-                  <th className="text-center p-3 font-medium text-muted-foreground whitespace-nowrap w-24">Ações</th>
+                  <th className="text-center p-3 font-medium text-muted-foreground whitespace-nowrap w-28">Ações</th>
                 </tr>
               </thead>
               <tbody>
@@ -290,102 +379,137 @@ export default function TransactionsPage() {
                     <td colSpan={7} className="p-8 text-center text-muted-foreground">Carregando...</td>
                   </tr>
                 ) : transactions && transactions.length > 0 ? (
-                  transactions.map((t: any, i: number) => (
-                    <motion.tr
-                      key={t.id}
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      transition={{ delay: Math.min(i * 0.01, 0.5) }}
-                      className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors group"
-                    >
-                      <td className="p-3 whitespace-nowrap text-muted-foreground">
-                        {new Date(t.date).toLocaleDateString("pt-BR")}
-                      </td>
-                      <td className="p-3">
-                        <div>
-                          <span className="font-medium">{t.description}</span>
-                          {t.alias && (
-                            <Badge variant="secondary" className="ml-2 text-[10px] px-1.5 py-0">{t.alias}</Badge>
-                          )}
-                        </div>
-                      </td>
-                      <td className="p-3 whitespace-nowrap">
-                        {(() => {
-                          const type = t.type || "purchase";
-                          const config: Record<string, { label: string; cls: string }> = {
-                            purchase: { label: "Compra", cls: "bg-primary/10 text-primary border-primary/20" },
-                            payment: { label: "Pagamento", cls: "bg-green-500/10 text-green-700 border-green-500/20" },
-                            interest: { label: "Juros", cls: "bg-destructive/10 text-destructive border-destructive/20" },
-                          };
-                          const c = config[type] || config.purchase;
-                          return <Badge variant="outline" className={`text-xs font-normal ${c.cls}`}>{c.label}</Badge>;
-                        })()}
-                      </td>
-                      <td className="p-3 whitespace-nowrap">
-                        {t.category ? (
-                          <Badge variant="outline" className="text-xs font-normal">{t.category}</Badge>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </td>
-                      <td className="p-3">
-                        {t.transaction_assignments && t.transaction_assignments.length > 0 ? (
-                          <div className="flex flex-wrap gap-1">
-                            {t.transaction_assignments.map((a: any, idx: number) => (
-                              <Badge key={idx} variant="secondary" className="text-xs">
-                                {profileMap[a.user_id] || "—"}
-                              </Badge>
-                            ))}
+                  transactions.map((t: any, i: number) => {
+                    const hasAssignment = t.transaction_assignments && t.transaction_assignments.length > 0;
+                    return (
+                      <motion.tr
+                        key={t.id}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ delay: Math.min(i * 0.01, 0.5) }}
+                        className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors group"
+                      >
+                        <td className="p-3 whitespace-nowrap text-muted-foreground">
+                          {new Date(t.date).toLocaleDateString("pt-BR")}
+                        </td>
+                        <td className="p-3">
+                          <div>
+                            <span className="font-medium">{t.description}</span>
+                            {t.alias && (
+                              <Badge variant="secondary" className="ml-2 text-[10px] px-1.5 py-0">{t.alias}</Badge>
+                            )}
                           </div>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </td>
-                      <td className={`p-3 text-right font-heading font-semibold whitespace-nowrap ${t.type === "payment" ? "text-green-600" : t.type === "interest" ? "text-destructive" : ""}`}>
-                        {t.type === "payment" ? "- " : ""}R$ {Number(t.amount).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-                      </td>
-                      <td className="p-3">
-                        <div className="flex items-center justify-center gap-0.5 opacity-60 group-hover:opacity-100 transition-opacity">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7"
-                            onClick={() => setAssignTx({ id: t.id, amount: Number(t.amount), description: t.alias || t.description })}
-                            title="Atribuir / Dividir"
-                          >
-                            <Users className="w-3.5 h-3.5 text-primary" />
-                          </Button>
-                          {!t.is_reviewed && (
+                        </td>
+                        <td className="p-3 whitespace-nowrap">
+                          {(() => {
+                            const type = t.type || "purchase";
+                            const config: Record<string, { label: string; cls: string }> = {
+                              purchase: { label: "Compra", cls: "bg-primary/10 text-primary border-primary/20" },
+                              payment: { label: "Pagamento", cls: "bg-green-500/10 text-green-700 border-green-500/20" },
+                              interest: { label: "Juros", cls: "bg-destructive/10 text-destructive border-destructive/20" },
+                            };
+                            const c = config[type] || config.purchase;
+                            return <Badge variant="outline" className={`text-xs font-normal ${c.cls}`}>{c.label}</Badge>;
+                          })()}
+                        </td>
+                        <td className="p-3 whitespace-nowrap">
+                          {t.category ? (
+                            <Badge variant="outline" className="text-xs font-normal">{t.category}</Badge>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </td>
+                        <td className="p-3">
+                          {hasAssignment ? (
+                            <div className="flex flex-wrap gap-1.5">
+                              {t.transaction_assignments.map((a: any, idx: number) => {
+                                const name = profileMap[a.user_id] || "—";
+                                const colors = userColorMap[a.user_id] || USER_COLORS[0];
+                                return (
+                                  <div
+                                    key={idx}
+                                    className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs ${colors.bg} ${colors.border} border`}
+                                  >
+                                    <span className={`w-5 h-5 rounded-full ${colors.bg} ${colors.text} flex items-center justify-center text-[10px] font-bold`}>
+                                      {getInitials(name)}
+                                    </span>
+                                    <span className="font-medium">{name.split(" ")[0]}</span>
+                                    <span className={`${colors.text} font-semibold`}>
+                                      R$ {Number(a.share_amount).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            t.type !== "payment" ? (
+                              <button
+                                onClick={() => setAssignTx({ id: t.id, amount: Number(t.amount), description: t.alias || t.description })}
+                                className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors group/assign cursor-pointer border border-dashed border-muted-foreground/30 hover:border-primary/40 rounded-full px-2.5 py-1"
+                              >
+                                <User className="w-3 h-3" />
+                                <span>Atribuir</span>
+                              </button>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )
+                          )}
+                        </td>
+                        <td className={`p-3 text-right font-heading font-semibold whitespace-nowrap ${t.type === "payment" ? "text-green-600" : t.type === "interest" ? "text-destructive" : ""}`}>
+                          {t.type === "payment" ? "- " : ""}R$ {Number(t.amount).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="p-3">
+                          <div className="flex items-center justify-center gap-0.5 opacity-60 group-hover:opacity-100 transition-opacity">
                             <Button
                               variant="ghost"
                               size="icon"
                               className="h-7 w-7"
-                              onClick={() => markReviewed.mutate(t.id)}
-                              title="Marcar como revisada"
+                              onClick={() => setAssignTx({ id: t.id, amount: Number(t.amount), description: t.alias || t.description })}
+                              title="Atribuir usuário"
                             >
-                              <CheckCircle className="w-3.5 h-3.5 text-success" />
+                              <User className="w-3.5 h-3.5 text-primary" />
                             </Button>
-                          )}
-                          {role === "admin" && (
                             <Button
                               variant="ghost"
                               size="icon"
                               className="h-7 w-7"
-                              onClick={() => {
-                                if (confirm("Remover este lançamento?")) deleteTx.mutate(t.id);
-                              }}
-                              title="Remover"
+                              onClick={() => setAssignTx({ id: t.id, amount: Number(t.amount), description: t.alias || t.description })}
+                              title="Dividir despesa"
                             >
-                              <Trash2 className="w-3.5 h-3.5 text-destructive" />
+                              <Scissors className="w-3.5 h-3.5 text-primary" />
                             </Button>
-                          )}
-                        </div>
-                      </td>
-                    </motion.tr>
-                  ))
+                            {!t.is_reviewed && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7"
+                                onClick={() => markReviewed.mutate(t.id)}
+                                title="Marcar como revisada"
+                              >
+                                <CheckCircle className="w-3.5 h-3.5 text-success" />
+                              </Button>
+                            )}
+                            {role === "admin" && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7"
+                                onClick={() => {
+                                  if (confirm("Remover este lançamento?")) deleteTx.mutate(t.id);
+                                }}
+                                title="Remover"
+                              >
+                                <Trash2 className="w-3.5 h-3.5 text-destructive" />
+                              </Button>
+                            )}
+                          </div>
+                        </td>
+                      </motion.tr>
+                    );
+                  })
                 ) : (
                   <tr>
-                    <td colSpan={6} className="p-8 text-center text-muted-foreground">
+                    <td colSpan={7} className="p-8 text-center text-muted-foreground">
                       {selectedStatement === "all"
                         ? "Selecione uma fatura para ver os lançamentos"
                         : "Nenhuma transação encontrada"}

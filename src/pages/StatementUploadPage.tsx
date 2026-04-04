@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Upload, FileText, CheckCircle, AlertCircle, Clock, Brain, Loader2 } from "lucide-react";
+import { Upload, FileText, CheckCircle, AlertCircle, Clock, Brain, Loader2, Trash2 } from "lucide-react";
 import { motion } from "framer-motion";
 import { Progress } from "@/components/ui/progress";
 
@@ -162,6 +162,25 @@ export default function StatementUploadPage() {
     }, 2000);
   };
 
+  const handleDeleteStatement = async (statementId: string) => {
+    if (!confirm("Tem certeza que deseja remover esta fatura e todos os seus lançamentos?")) return;
+
+    try {
+      // Desvincula/remove transações atreladas à fatura
+      await supabase.from("transactions").delete().eq("statement_id", statementId);
+      
+      // Remove o registro da fatura
+      const { error } = await supabase.from("statements").delete().eq("id", statementId);
+      if (error) throw error;
+      
+      toast.success("Fatura removida com sucesso!");
+      queryClient.invalidateQueries({ queryKey: ["statements"] });
+      queryClient.invalidateQueries({ queryKey: ["transactions"] });
+    } catch (err: any) {
+      toast.error("Erro ao remover: " + err.message);
+    }
+  };
+
   const statusConfig: Record<string, { icon: any; label: string; className: string }> = {
     pending: { icon: Clock, label: "Pendente", className: "bg-warning/10 text-warning" },
     processing: { icon: Clock, label: "Processando", className: "bg-primary/10 text-primary" },
@@ -294,10 +313,21 @@ export default function StatementUploadPage() {
                           </p>
                         </div>
                       </div>
-                      <span className={`text-xs px-2 py-1 rounded-full font-medium inline-flex items-center gap-1 ${config.className}`}>
-                        <StatusIcon className="w-3 h-3" />
-                        {config.label}
-                      </span>
+                      <div className="flex items-center gap-3">
+                        <span className={`text-xs px-2 py-1 rounded-full font-medium inline-flex items-center gap-1 ${config.className}`}>
+                          <StatusIcon className="w-3 h-3" />
+                          {config.label}
+                        </span>
+                        <Button 
+                          type="button"
+                          variant="ghost" 
+                          size="icon" 
+                          className="h-8 w-8 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                          onClick={() => handleDeleteStatement(s.id)}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
                     </motion.div>
                   );
                 })}
