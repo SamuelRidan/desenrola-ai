@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Search, CheckCircle, Users, DollarSign, User, Plus, Trash2, Edit2 } from "lucide-react";
+import { Search, CheckCircle, Users, DollarSign, User, Plus, Trash2, CreditCard, TrendingDown, AlertTriangle, Wallet } from "lucide-react";
 import { motion } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
 import AssignTransactionDialog from "@/components/AssignTransactionDialog";
