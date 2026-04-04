@@ -307,6 +307,18 @@ export default function TransactionsPage() {
                         </div>
                       </td>
                       <td className="p-3 whitespace-nowrap">
+                        {(() => {
+                          const type = t.type || "purchase";
+                          const config: Record<string, { label: string; cls: string }> = {
+                            purchase: { label: "Compra", cls: "bg-primary/10 text-primary border-primary/20" },
+                            payment: { label: "Pagamento", cls: "bg-green-500/10 text-green-700 border-green-500/20" },
+                            interest: { label: "Juros", cls: "bg-destructive/10 text-destructive border-destructive/20" },
+                          };
+                          const c = config[type] || config.purchase;
+                          return <Badge variant="outline" className={`text-xs font-normal ${c.cls}`}>{c.label}</Badge>;
+                        })()}
+                      </td>
+                      <td className="p-3 whitespace-nowrap">
                         {t.category ? (
                           <Badge variant="outline" className="text-xs font-normal">{t.category}</Badge>
                         ) : (
