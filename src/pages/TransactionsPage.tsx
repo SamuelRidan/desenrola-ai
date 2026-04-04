@@ -148,49 +148,98 @@ export default function TransactionsPage() {
 
       {/* Summary Cards */}
       {summary && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <Card className="shadow-card bg-primary/5 border-primary/20">
-            <CardContent className="p-4 flex items-center gap-3">
-              <div className="rounded-full bg-primary/10 p-2 shrink-0">
-                <DollarSign className="w-5 h-5 text-primary" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-xs text-muted-foreground truncate">Total da Fatura</p>
-                <p className="text-lg font-heading font-bold">
-                  R$ {summary.total.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-          {Object.entries(summary.byUser).map(([uid, info]) => (
-            <Card key={uid} className="shadow-card">
+        <div className="space-y-3">
+          {/* Financial Overview */}
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+            <Card className="shadow-card bg-primary/5 border-primary/20">
               <CardContent className="p-4 flex items-center gap-3">
-                <div className="rounded-full bg-accent/50 p-2 shrink-0">
-                  <User className="w-4 h-4 text-accent-foreground" />
+                <div className="rounded-full bg-primary/10 p-2 shrink-0">
+                  <CreditCard className="w-5 h-5 text-primary" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-xs text-muted-foreground truncate">{info.name}</p>
+                  <p className="text-xs text-muted-foreground truncate">Compras</p>
                   <p className="text-lg font-heading font-bold">
-                    R$ {info.total.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                    R$ {summary.purchases.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                   </p>
                 </div>
               </CardContent>
             </Card>
-          ))}
-          {summary.unassignedTotal > 0.01 && (
-            <Card className="shadow-card border-dashed">
+            <Card className="shadow-card bg-green-500/5 border-green-500/20">
               <CardContent className="p-4 flex items-center gap-3">
-                <div className="rounded-full bg-muted p-2 shrink-0">
-                  <Users className="w-4 h-4 text-muted-foreground" />
+                <div className="rounded-full bg-green-500/10 p-2 shrink-0">
+                  <Wallet className="w-5 h-5 text-green-600" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-xs text-muted-foreground truncate">Não atribuído</p>
-                  <p className="text-lg font-heading font-bold">
-                    R$ {summary.unassignedTotal.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                  <p className="text-xs text-muted-foreground truncate">Pagamentos</p>
+                  <p className="text-lg font-heading font-bold text-green-600">
+                    - R$ {summary.payments.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                   </p>
                 </div>
               </CardContent>
             </Card>
+            {summary.interest > 0 && (
+              <Card className="shadow-card bg-destructive/5 border-destructive/20">
+                <CardContent className="p-4 flex items-center gap-3">
+                  <div className="rounded-full bg-destructive/10 p-2 shrink-0">
+                    <AlertTriangle className="w-5 h-5 text-destructive" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs text-muted-foreground truncate">Juros / Encargos</p>
+                    <p className="text-lg font-heading font-bold text-destructive">
+                      R$ {summary.interest.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+            <Card className={`shadow-card ${summary.openBalance > 0 ? "bg-orange-500/5 border-orange-500/20" : "bg-green-500/5 border-green-500/20"}`}>
+              <CardContent className="p-4 flex items-center gap-3">
+                <div className={`rounded-full p-2 shrink-0 ${summary.openBalance > 0 ? "bg-orange-500/10" : "bg-green-500/10"}`}>
+                  <DollarSign className={`w-5 h-5 ${summary.openBalance > 0 ? "text-orange-600" : "text-green-600"}`} />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs text-muted-foreground truncate">Saldo em Aberto</p>
+                  <p className={`text-lg font-heading font-bold ${summary.openBalance > 0 ? "text-orange-600" : "text-green-600"}`}>
+                    R$ {summary.openBalance.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+            {summary.unassignedTotal > 0.01 && (
+              <Card className="shadow-card border-dashed">
+                <CardContent className="p-4 flex items-center gap-3">
+                  <div className="rounded-full bg-muted p-2 shrink-0">
+                    <Users className="w-4 h-4 text-muted-foreground" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs text-muted-foreground truncate">Não atribuído</p>
+                    <p className="text-lg font-heading font-bold">
+                      R$ {summary.unassignedTotal.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+          {/* Per-user breakdown */}
+          {Object.keys(summary.byUser).length > 0 && (
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              {Object.entries(summary.byUser).map(([uid, info]) => (
+                <Card key={uid} className="shadow-card">
+                  <CardContent className="p-4 flex items-center gap-3">
+                    <div className="rounded-full bg-accent/50 p-2 shrink-0">
+                      <User className="w-4 h-4 text-accent-foreground" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs text-muted-foreground truncate">{info.name}</p>
+                      <p className="text-lg font-heading font-bold">
+                        R$ {info.total.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
           )}
         </div>
       )}
