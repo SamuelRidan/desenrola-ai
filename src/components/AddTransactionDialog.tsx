@@ -32,6 +32,7 @@ export default function AddTransactionDialog({ open, onOpenChange, statementId }
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
   const [category, setCategory] = useState("");
+  const [type, setType] = useState("purchase");
 
   const addMutation = useMutation({
     mutationFn: async () => {
