@@ -11,7 +11,13 @@ import { Plus } from "lucide-react";
 
 const CATEGORIES = [
   "Alimentação", "Transporte", "Compras", "Saúde",
-  "Lazer", "Serviços", "Educação", "Moradia", "Outros"
+  "Lazer", "Serviços", "Educação", "Moradia", "Juros/Encargos", "Pagamento", "Outros"
+];
+
+const TYPES = [
+  { value: "purchase", label: "Compra" },
+  { value: "payment", label: "Pagamento" },
+  { value: "interest", label: "Juros / Encargos" },
 ];
 
 interface Props {
