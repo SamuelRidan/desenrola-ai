@@ -105,27 +105,30 @@ export default function TransactionsPage() {
     let assignedTotal = 0;
 
     for (const t of transactions) {
-      const amt = Number(t.amount);
-      const type = (t as any).type || "purchase";
+      const amt = Number(t.amount) || 0;
+      const type = t.type || "purchase";
       if (type === "payment") payments += amt;
       else if (type === "interest") interest += amt;
       else purchases += amt;
 
-      const assigns = (t as any).transaction_assignments;
-      if (assigns && assigns.length > 0 && type === "purchase") {
+      // Count assignments for purchases and interest (not payments)
+      const assigns = t.transaction_assignments;
+      if (assigns && assigns.length > 0 && type !== "payment") {
         for (const a of assigns) {
           const uid = a.user_id;
+          const share = Number(a.share_amount) || 0;
           const name = profileMap[uid] || "Sem nome";
           if (!byUser[uid]) byUser[uid] = { name, total: 0 };
-          byUser[uid].total += Number(a.share_amount);
-          assignedTotal += Number(a.share_amount);
+          byUser[uid].total += share;
+          assignedTotal += share;
         }
       }
     }
 
-    const openBalance = purchases + interest - payments;
-    const unassignedTotal = purchases - assignedTotal;
-    return { purchases, payments, interest, openBalance, byUser, unassignedTotal, count: transactions.length };
+    const totalCharges = purchases + interest;
+    const openBalance = totalCharges - payments;
+    const unassignedTotal = totalCharges - assignedTotal;
+    return { purchases, payments, interest, openBalance, totalCharges, byUser, unassignedTotal, count: transactions.length };
   }, [transactions, profileMap]);
 
   return (
