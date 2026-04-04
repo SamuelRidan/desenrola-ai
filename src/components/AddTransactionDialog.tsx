@@ -55,6 +55,7 @@ export default function AddTransactionDialog({ open, onOpenChange, statementId }
       setDescription("");
       setAmount("");
       setCategory("");
+      setType("purchase");
       onOpenChange(false);
     },
     onError: (err: any) => toast.error(err.message || "Erro ao adicionar"),
