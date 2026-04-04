@@ -43,6 +43,7 @@ export default function AddTransactionDialog({ open, onOpenChange, statementId }
         description: description.trim(),
         amount: Math.abs(parseFloat(amount)),
         category: category || null,
+        type,
         is_reviewed: false,
       });
       if (error) throw error;
