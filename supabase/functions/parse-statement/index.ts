@@ -587,6 +587,7 @@ async function processAIResponse(
         success: true,
         count: transactionsToInsert.length,
         total_fatura: totalFatura,
+        previous_balance: saldoAnterior,
         transactions: transactionsToInsert,
       }),
       {
