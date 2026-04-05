@@ -435,7 +435,7 @@ Se não souber a data exata de um lançamento, use o primeiro dia do mês da fat
   } catch (err) {
     console.error("parse-statement error:", err);
     return new Response(
-      JSON.stringify({ error: err.message || "Erro interno" }),
+      JSON.stringify({ error: (err as Error).message || "Erro interno" }),
       {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
