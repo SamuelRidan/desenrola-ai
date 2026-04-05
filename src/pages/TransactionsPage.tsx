@@ -162,11 +162,16 @@ export default function TransactionsPage() {
       }
     }
 
+    // Get previous_balance from selected statement
+    const selectedStmt = statements?.find((s: any) => s.id === selectedStatement);
+    const previousBalance = selectedStmt ? Number(selectedStmt.previous_balance) || 0 : 0;
+    const totalFaturaDoc = selectedStmt ? Number(selectedStmt.total_fatura) || 0 : 0;
+
     const totalCharges = purchases + interest;
-    const openBalance = totalCharges - payments;
+    const openBalance = previousBalance + totalCharges - payments;
     const unassignedTotal = totalCharges - assignedTotal;
-    return { purchases, payments, interest, openBalance, totalCharges, byUser, unassignedTotal, assignedTotal, count: transactions.length };
-  }, [transactions, profileMap]);
+    return { purchases, payments, interest, openBalance, totalCharges, byUser, unassignedTotal, assignedTotal, count: transactions.length, previousBalance, totalFaturaDoc };
+  }, [transactions, profileMap, statements, selectedStatement]);
 
   const formatBRL = (v: number) => v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
