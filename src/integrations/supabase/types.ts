@@ -78,7 +78,9 @@ export type Database = {
           file_name: string | null
           id: string
           month: number
+          previous_balance: number
           status: string
+          total_fatura: number
           updated_at: string
           uploaded_by: string | null
           year: number
@@ -89,7 +91,9 @@ export type Database = {
           file_name?: string | null
           id?: string
           month: number
+          previous_balance?: number
           status?: string
+          total_fatura?: number
           updated_at?: string
           uploaded_by?: string | null
           year: number
@@ -100,7 +104,9 @@ export type Database = {
           file_name?: string | null
           id?: string
           month?: number
+          previous_balance?: number
           status?: string
+          total_fatura?: number
           updated_at?: string
           uploaded_by?: string | null
           year?: number

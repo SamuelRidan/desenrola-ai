@@ -202,7 +202,8 @@ FORMATO DE RESPOSTA
 ═══════════════════════════════════════
 Responda APENAS com um JSON object válido (sem markdown, sem backticks):
 {
-  "total_fatura": <número com o total da fatura como impresso no documento, ou null se não encontrado>,
+  "total_fatura": <número com o total da fatura/valor a pagar como impresso no documento, ou null se não encontrado>,
+  "saldo_anterior": <número com o saldo anterior/valor da fatura anterior que ficou em aberto, ou 0 se não houver ou não encontrado>,
   "transactions": [
     {
       "date": "YYYY-MM-DD",
@@ -366,7 +367,8 @@ FORMATO DE RESPOSTA
 ═══════════════════════════════════════
 Responda APENAS com um JSON object válido (sem markdown, sem backticks):
 {
-  "total_fatura": <número com o total da fatura como impresso no documento, ou null se não encontrado>,
+  "total_fatura": <número com o total da fatura/valor a pagar como impresso no documento, ou null se não encontrado>,
+  "saldo_anterior": <número com o saldo anterior/valor da fatura anterior que ficou em aberto, ou 0 se não houver ou não encontrado>,
   "transactions": [
     {
       "date": "YYYY-MM-DD",
@@ -462,12 +464,14 @@ async function processAIResponse(
     // Support both new format {total_fatura, transactions} and old format [array]
     let transactions: any[];
     let totalFatura: number | null = null;
+    let saldoAnterior: number = 0;
 
     if (Array.isArray(parsed)) {
       transactions = parsed;
     } else if (parsed && Array.isArray(parsed.transactions)) {
       transactions = parsed.transactions;
       totalFatura = parsed.total_fatura != null ? Number(parsed.total_fatura) : null;
+      saldoAnterior = parsed.saldo_anterior != null ? Number(parsed.saldo_anterior) : 0;
     } else {
       await adminClient
         .from("statements")
@@ -572,10 +576,10 @@ async function processAIResponse(
       );
     }
 
-    // Update statement status to completed
+    // Update statement status to completed with totals
     await adminClient
       .from("statements")
-      .update({ status: "completed" })
+      .update({ status: "completed", previous_balance: saldoAnterior, total_fatura: totalFatura || 0 })
       .eq("id", statementId);
 
     return new Response(
@@ -583,6 +587,7 @@ async function processAIResponse(
         success: true,
         count: transactionsToInsert.length,
         total_fatura: totalFatura,
+        previous_balance: saldoAnterior,
         transactions: transactionsToInsert,
       }),
       {
