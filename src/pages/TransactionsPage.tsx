@@ -312,25 +312,24 @@ export default function TransactionsPage() {
                       <div className="p-1.5 sm:p-2 rounded-full bg-white/15 backdrop-blur-sm">
                         <Receipt className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
                       </div>
-                      <p className="text-white/80 text-xs sm:text-sm font-medium tracking-wide uppercase">Total da Fatura</p>
+                      <p className="text-white/80 text-xs sm:text-sm font-medium tracking-wide uppercase">Valor a Pagar</p>
                     </div>
                     <p className="text-3xl sm:text-4xl md:text-5xl font-heading font-bold text-white tracking-tight">
+                      R$ {formatBRL(summary.openBalance > 0 ? summary.openBalance : 0)}
+                    </p>
+                    <p className="text-white/60 text-xs sm:text-sm mt-1.5 sm:mt-2">
+                      Total da fatura: <span className="text-white/90 font-medium">R$ {formatBRL(summary.totalCharges)}</span>
+                      {summary.payments > 0 && (
+                        <> · Pagamentos: <span className="text-white/90 font-medium">- R$ {formatBRL(summary.payments)}</span></>
+                      )}
+                    </p>
+                  </div>
+                  <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-white/10">
+                    <p className="text-white/70 text-[10px] sm:text-xs font-medium uppercase tracking-wide">Total Fatura (Compras + Juros)</p>
+                    <p className="text-xl sm:text-2xl font-heading font-bold text-white mt-0.5">
                       R$ {formatBRL(summary.totalCharges)}
                     </p>
-                    {summary.payments > 0 && (
-                      <p className="text-white/60 text-xs sm:text-sm mt-1.5 sm:mt-2">
-                        Pagamentos: <span className="text-white/90 font-medium">- R$ {formatBRL(summary.payments)}</span>
-                      </p>
-                    )}
                   </div>
-                  {summary.openBalance > 0 && (
-                    <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-white/10">
-                      <p className="text-white/70 text-[10px] sm:text-xs font-medium uppercase tracking-wide">Saldo em Aberto</p>
-                      <p className="text-xl sm:text-2xl font-heading font-bold text-white mt-0.5">
-                        R$ {formatBRL(summary.openBalance)}
-                      </p>
-                    </div>
-                  )}
                 </div>
               </div>
             </Card>
