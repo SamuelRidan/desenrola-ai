@@ -464,12 +464,14 @@ async function processAIResponse(
     // Support both new format {total_fatura, transactions} and old format [array]
     let transactions: any[];
     let totalFatura: number | null = null;
+    let saldoAnterior: number = 0;
 
     if (Array.isArray(parsed)) {
       transactions = parsed;
     } else if (parsed && Array.isArray(parsed.transactions)) {
       transactions = parsed.transactions;
       totalFatura = parsed.total_fatura != null ? Number(parsed.total_fatura) : null;
+      saldoAnterior = parsed.saldo_anterior != null ? Number(parsed.saldo_anterior) : 0;
     } else {
       await adminClient
         .from("statements")
