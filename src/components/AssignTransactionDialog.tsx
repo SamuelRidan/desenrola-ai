@@ -2,11 +2,12 @@ import { useState, useEffect, useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Users, Scissors, Trash2, User, Check, AlertTriangle } from "lucide-react";
+import { Users, Scissors, User, Check, AlertTriangle } from "lucide-react";
 
 const USER_COLORS = [
   { bg: "bg-violet-500/15", text: "text-violet-600", border: "border-violet-500/25", ring: "ring-violet-500/20" },
@@ -27,6 +28,17 @@ function getInitials(name: string) {
     .toUpperCase();
 }
 
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
+  return isMobile;
+}
+
 interface Profile {
   user_id: string;
   full_name: string;
@@ -45,6 +57,7 @@ interface Props {
 }
 
 export default function AssignTransactionDialog({ open, onOpenChange, transaction }: Props) {
+  const isMobile = useIsMobile();
   const queryClient = useQueryClient();
   const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
   const [amounts, setAmounts] = useState<Record<string, string>>({});
@@ -96,7 +109,6 @@ export default function AssignTransactionDialog({ open, onOpenChange, transactio
   const toggleUser = (userId: string) => {
     setSelectedUsers((prev) => {
       if (prev.includes(userId)) {
-        // Also clean up amount
         setAmounts((a) => {
           const copy = { ...a };
           delete copy[userId];
@@ -156,7 +168,6 @@ export default function AssignTransactionDialog({ open, onOpenChange, transactio
     onError: () => toast.error("Erro ao salvar atribuições"),
   });
 
-  // Fixed: properly sum all amounts from selected users
   const totalAssigned = useMemo(() => {
     return selectedUsers.reduce((sum, uid) => {
       const val = parseFloat(amounts[uid] || "0");
@@ -168,6 +179,181 @@ export default function AssignTransactionDialog({ open, onOpenChange, transactio
   const isBalanced = Math.abs(diff) < 0.01;
   const percentAssigned = transaction && transaction.amount > 0 ? (totalAssigned / transaction.amount) * 100 : 0;
 
+  // Shared form content used by both Dialog and Drawer
+  const formContent = transaction ? (
+    <div className="space-y-4 md:space-y-5">
+      {/* Transaction info */}
+      <div className="rounded-xl bg-muted/40 border border-border p-3 md:p-4">
+        <p className="text-sm font-medium truncate text-muted-foreground">{transaction.description}</p>
+        <p className="text-xl md:text-2xl font-heading font-bold text-primary mt-1">
+          R$ {transaction.amount.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+        </p>
+      </div>
+
+      {/* Quick actions */}
+      <div className="space-y-2">
+        <Label className="text-xs md:text-sm font-medium text-muted-foreground">Atribuir tudo a uma pessoa</Label>
+        <div className="flex flex-wrap gap-2">
+          {profiles?.map((p) => {
+            const colors = userColorMap[p.user_id] || USER_COLORS[0];
+            const isSelected = selectedUsers.length === 1 && selectedUsers[0] === p.user_id && isBalanced;
+            return (
+              <button
+                key={p.user_id}
+                onClick={() => assignToSingle(p.user_id)}
+                className={`
+                  inline-flex items-center gap-1.5 md:gap-2 rounded-full px-2.5 md:px-3 py-1.5 md:py-1.5 text-sm border transition-all active:scale-95
+                  ${isSelected
+                    ? `${colors.bg} ${colors.border} ${colors.text} ring-2 ${colors.ring}`
+                    : "border-border hover:border-primary/30 hover:bg-muted/50 active:bg-muted"
+                  }
+                `}
+              >
+                <span className={`w-6 h-6 rounded-full ${colors.bg} ${colors.text} flex items-center justify-center text-[10px] font-bold`}>
+                  {getInitials(p.full_name || p.user_id)}
+                </span>
+                <span className="font-medium">{(p.full_name || p.user_id).split(" ")[0]}</span>
+                {isSelected && <Check className="w-3.5 h-3.5" />}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Divider */}
+      <div className="flex items-center gap-3">
+        <div className="flex-1 h-px bg-border" />
+        <span className="text-[10px] md:text-xs text-muted-foreground font-medium">ou divida entre vários</span>
+        <div className="flex-1 h-px bg-border" />
+      </div>
+
+      {/* User list for splitting */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <Label className="text-sm font-medium">Selecione os usuários</Label>
+          <Button variant="outline" size="sm" onClick={splitEvenly} disabled={selectedUsers.length === 0} className="h-8 md:h-8 text-xs">
+            <Scissors className="w-3.5 h-3.5 mr-1.5" />
+            Dividir igual
+          </Button>
+        </div>
+
+        <div className="space-y-2 max-h-48 md:max-h-60 overflow-y-auto pr-1">
+          {profiles?.map((p) => {
+            const checked = selectedUsers.includes(p.user_id);
+            const colors = userColorMap[p.user_id] || USER_COLORS[0];
+            return (
+              <div
+                key={p.user_id}
+                className={`flex items-center gap-2.5 md:gap-3 p-2.5 md:p-3 rounded-xl border transition-all ${
+                  checked ? `${colors.bg} ${colors.border}` : "border-border"
+                }`}
+              >
+                <button
+                  onClick={() => toggleUser(p.user_id)}
+                  className={`w-9 h-9 md:w-9 md:h-9 rounded-full flex items-center justify-center shrink-0 text-xs font-bold transition-all active:scale-90 ${
+                    checked
+                      ? `${colors.bg} ${colors.text} ring-2 ${colors.ring}`
+                      : "bg-muted text-muted-foreground"
+                  }`}
+                >
+                  {checked ? <Check className="w-4 h-4" /> : getInitials(p.full_name || p.user_id)}
+                </button>
+                <span className="text-sm flex-1 font-medium truncate">{p.full_name || p.user_id}</span>
+                {checked && (
+                  <div className="flex items-center gap-1">
+                    <span className="text-xs text-muted-foreground">R$</span>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      inputMode="decimal"
+                      className="w-24 md:w-28 text-right font-heading font-semibold h-9"
+                      placeholder="0,00"
+                      value={amounts[p.user_id] || ""}
+                      onChange={(e) =>
+                        setAmounts((prev) => ({ ...prev, [p.user_id]: e.target.value }))
+                      }
+                    />
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Running total bar */}
+      {selectedUsers.length > 0 && (
+        <div className="space-y-2">
+          <div className="h-2 rounded-full bg-muted overflow-hidden">
+            <div
+              className={`h-full rounded-full transition-all duration-300 ${
+                isBalanced
+                  ? "bg-green-500"
+                  : totalAssigned > (transaction?.amount || 0)
+                  ? "bg-destructive"
+                  : "bg-warning"
+              }`}
+              style={{ width: `${Math.min(percentAssigned, 100)}%` }}
+            />
+          </div>
+          <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-1 p-2.5 md:p-3 rounded-xl text-sm ${
+            isBalanced
+              ? "bg-green-500/10 border border-green-500/20"
+              : "bg-warning/10 border border-warning/20"
+          }`}>
+            <div className="flex items-center gap-2">
+              {isBalanced ? (
+                <Check className="w-4 h-4 text-green-600 shrink-0" />
+              ) : (
+                <AlertTriangle className="w-4 h-4 text-warning shrink-0" />
+              )}
+              <span className="font-medium text-xs md:text-sm">
+                R$ {totalAssigned.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                <span className="text-muted-foreground"> / R$ {transaction.amount.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
+              </span>
+            </div>
+            {!isBalanced && (
+              <span className="font-heading font-bold text-warning text-xs md:text-sm">
+                {diff > 0 ? "Faltam" : "Excede"}: R$ {Math.abs(diff).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Actions */}
+      <div className="flex gap-2 pt-1">
+        <Button variant="outline" onClick={() => onOpenChange(false)} className="flex-1 md:flex-none h-11 md:h-9">
+          Cancelar
+        </Button>
+        <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending} className="flex-1 md:flex-none h-11 md:h-9">
+          Salvar
+        </Button>
+      </div>
+    </div>
+  ) : null;
+
+  // Mobile: Bottom Sheet (Drawer)
+  if (isMobile) {
+    return (
+      <Drawer open={open} onOpenChange={onOpenChange}>
+        <DrawerContent className="max-h-[92vh]">
+          <DrawerHeader className="text-left pb-2">
+            <DrawerTitle className="font-heading flex items-center gap-2 text-base">
+              <Users className="w-5 h-5 text-primary" />
+              Atribuir / Dividir Despesa
+            </DrawerTitle>
+          </DrawerHeader>
+          <div className="px-4 pb-6 overflow-y-auto">
+            {formContent}
+          </div>
+        </DrawerContent>
+      </Drawer>
+    );
+  }
+
+  // Desktop: Dialog
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
@@ -177,159 +363,7 @@ export default function AssignTransactionDialog({ open, onOpenChange, transactio
             Atribuir / Dividir Despesa
           </DialogTitle>
         </DialogHeader>
-
-        {transaction && (
-          <div className="space-y-5">
-            {/* Transaction info */}
-            <div className="rounded-xl bg-muted/40 border border-border p-4">
-              <p className="text-sm font-medium truncate text-muted-foreground">{transaction.description}</p>
-              <p className="text-2xl font-heading font-bold text-primary mt-1">
-                R$ {transaction.amount.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-              </p>
-            </div>
-
-            {/* Quick actions */}
-            <div className="space-y-2">
-              <Label className="text-sm font-medium text-muted-foreground">Atribuição rápida — clique para atribuir tudo a uma pessoa</Label>
-              <div className="flex flex-wrap gap-2">
-                {profiles?.map((p, idx) => {
-                  const colors = userColorMap[p.user_id] || USER_COLORS[0];
-                  const isSelected = selectedUsers.length === 1 && selectedUsers[0] === p.user_id && isBalanced;
-                  return (
-                    <button
-                      key={p.user_id}
-                      onClick={() => assignToSingle(p.user_id)}
-                      className={`
-                        inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm border transition-all
-                        ${isSelected
-                          ? `${colors.bg} ${colors.border} ${colors.text} ring-2 ${colors.ring}`
-                          : "border-border hover:border-primary/30 hover:bg-muted/50"
-                        }
-                      `}
-                    >
-                      <span className={`w-6 h-6 rounded-full ${colors.bg} ${colors.text} flex items-center justify-center text-[10px] font-bold`}>
-                        {getInitials(p.full_name || p.user_id)}
-                      </span>
-                      <span className="font-medium">{(p.full_name || p.user_id).split(" ")[0]}</span>
-                      {isSelected && <Check className="w-3.5 h-3.5" />}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Divider */}
-            <div className="flex items-center gap-3">
-              <div className="flex-1 h-px bg-border" />
-              <span className="text-xs text-muted-foreground font-medium">ou divida entre vários</span>
-              <div className="flex-1 h-px bg-border" />
-            </div>
-
-            {/* User list for splitting */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label className="text-sm font-medium">Selecione os usuários</Label>
-                <Button variant="outline" size="sm" onClick={splitEvenly} disabled={selectedUsers.length === 0}>
-                  <Scissors className="w-3.5 h-3.5 mr-1.5" />
-                  Dividir igual
-                </Button>
-              </div>
-
-              <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
-                {profiles?.map((p) => {
-                  const checked = selectedUsers.includes(p.user_id);
-                  const colors = userColorMap[p.user_id] || USER_COLORS[0];
-                  return (
-                    <div
-                      key={p.user_id}
-                      className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${
-                        checked ? `${colors.bg} ${colors.border}` : "border-border hover:border-muted-foreground/20"
-                      }`}
-                    >
-                      <button
-                        onClick={() => toggleUser(p.user_id)}
-                        className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-xs font-bold transition-all ${
-                          checked
-                            ? `${colors.bg} ${colors.text} ring-2 ${colors.ring}`
-                            : "bg-muted text-muted-foreground"
-                        }`}
-                      >
-                        {checked ? <Check className="w-4 h-4" /> : getInitials(p.full_name || p.user_id)}
-                      </button>
-                      <span className="text-sm flex-1 font-medium">{p.full_name || p.user_id}</span>
-                      {checked && (
-                        <div className="flex items-center gap-1">
-                          <span className="text-xs text-muted-foreground">R$</span>
-                          <Input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            className="w-28 text-right font-heading font-semibold"
-                            placeholder="0,00"
-                            value={amounts[p.user_id] || ""}
-                            onChange={(e) =>
-                              setAmounts((prev) => ({ ...prev, [p.user_id]: e.target.value }))
-                            }
-                          />
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Running total bar */}
-            {selectedUsers.length > 0 && (
-              <div className="space-y-2">
-                {/* Progress bar */}
-                <div className="h-2 rounded-full bg-muted overflow-hidden">
-                  <div
-                    className={`h-full rounded-full transition-all duration-300 ${
-                      isBalanced
-                        ? "bg-green-500"
-                        : totalAssigned > (transaction?.amount || 0)
-                        ? "bg-destructive"
-                        : "bg-warning"
-                    }`}
-                    style={{ width: `${Math.min(percentAssigned, 100)}%` }}
-                  />
-                </div>
-                <div className={`flex items-center justify-between p-3 rounded-xl text-sm ${
-                  isBalanced
-                    ? "bg-green-500/10 border border-green-500/20"
-                    : "bg-warning/10 border border-warning/20"
-                }`}>
-                  <div className="flex items-center gap-2">
-                    {isBalanced ? (
-                      <Check className="w-4 h-4 text-green-600" />
-                    ) : (
-                      <AlertTriangle className="w-4 h-4 text-warning" />
-                    )}
-                    <span className="font-medium">
-                      Atribuído: R$ {totalAssigned.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-                    </span>
-                    <span className="text-muted-foreground">
-                      / R$ {transaction.amount.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-                    </span>
-                  </div>
-                  {!isBalanced && (
-                    <span className="font-heading font-bold text-warning">
-                      {diff > 0 ? "Faltam" : "Excede"}: R$ {Math.abs(diff).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-                    </span>
-                  )}
-                </div>
-              </div>
-            )}
-
-            <div className="flex gap-2 justify-end pt-1">
-              <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
-              <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
-                Salvar
-              </Button>
-            </div>
-          </div>
-        )}
+        {formContent}
       </DialogContent>
     </Dialog>
   );
