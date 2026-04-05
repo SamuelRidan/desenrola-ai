@@ -367,7 +367,8 @@ FORMATO DE RESPOSTA
 ═══════════════════════════════════════
 Responda APENAS com um JSON object válido (sem markdown, sem backticks):
 {
-  "total_fatura": <número com o total da fatura como impresso no documento, ou null se não encontrado>,
+  "total_fatura": <número com o total da fatura/valor a pagar como impresso no documento, ou null se não encontrado>,
+  "saldo_anterior": <número com o saldo anterior/valor da fatura anterior que ficou em aberto, ou 0 se não houver ou não encontrado>,
   "transactions": [
     {
       "date": "YYYY-MM-DD",
