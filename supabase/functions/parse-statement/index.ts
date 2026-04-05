@@ -576,10 +576,10 @@ async function processAIResponse(
       );
     }
 
-    // Update statement status to completed
+    // Update statement status to completed with totals
     await adminClient
       .from("statements")
-      .update({ status: "completed" })
+      .update({ status: "completed", previous_balance: saldoAnterior, total_fatura: totalFatura || 0 })
       .eq("id", statementId);
 
     return new Response(
