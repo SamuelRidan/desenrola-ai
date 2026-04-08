@@ -299,7 +299,7 @@ const USER_MESSAGE = "Extraia todos os lançamentos desta fatura de cartão de c
               },
               {
                 role: "user",
-                content: `Extraia todos os lançamentos desta fatura de cartão de crédito. Lembre-se: NÃO duplique juros/encargos que aparecem tanto no resumo quanto na lista de transações. Extraia APENAS da lista de transações.\n\n${fileContent}`,
+                content: `${USER_MESSAGE}\n\n${fileContent}`,
               },
             ],
           }),
