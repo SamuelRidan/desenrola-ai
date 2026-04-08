@@ -92,7 +92,7 @@ ATENÇÃO: NÃO use type "payment". Pagamentos da fatura anterior já estão ref
 Se não souber a data exata de um lançamento, use o primeiro dia do mês da fatura.`;
 
 const USER_MESSAGE = "Extraia todos os lançamentos desta fatura de cartão de crédito. IMPORTANTE: (1) Use o SALDO FINANCIADO como saldo_anterior (fatura anterior - pagamento), NÃO o valor total da fatura anterior. (2) NÃO inclua pagamentos da fatura anterior nem créditos de rotativo como transações. (3) Inclua APENAS compras e juros/IOF individuais da lista de transações.";
-
+Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
