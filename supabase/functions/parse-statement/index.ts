@@ -198,9 +198,14 @@ Deno.serve(async (req) => {
     if (fileName.endsWith(".pdf")) {
       // For PDFs, convert to base64 and send to AI as a document
       const arrayBuffer = await fileData.arrayBuffer();
-      const base64 = btoa(
-        String.fromCharCode(...new Uint8Array(arrayBuffer))
-      );
+      const bytes = new Uint8Array(arrayBuffer);
+      let binary = "";
+      const CHUNK_SIZE = 8192;
+      for (let i = 0; i < bytes.length; i += CHUNK_SIZE) {
+        const chunk = bytes.subarray(i, Math.min(i + CHUNK_SIZE, bytes.length));
+        binary += String.fromCharCode.apply(null, Array.from(chunk));
+      }
+      const base64 = btoa(binary);
       fileContent = `[PDF file content in base64 - the AI model will process this as a document]`;
 
       // Use multimodal AI call for PDF
