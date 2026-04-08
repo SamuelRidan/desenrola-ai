@@ -430,23 +430,21 @@ async function processAIResponse(
     }
     transactions = deduplicated;
 
-    // ── Validation: check extracted total vs statement total ──
+    // ── Validation: check saldo_anterior + transactions ≈ total_fatura ──
     if (totalFatura != null && totalFatura > 0) {
       let sumPurchases = 0;
       let sumInterest = 0;
-      let sumPayments = 0;
       for (const t of transactions) {
         const amt = Math.abs(Number(t.amount));
         const type = t.type || "purchase";
-        if (type === "payment") sumPayments += amt;
-        else if (type === "interest") sumInterest += amt;
+        if (type === "interest") sumInterest += amt;
         else sumPurchases += amt;
       }
-      const calculatedTotal = sumPurchases + sumInterest - sumPayments;
+      const calculatedTotal = saldoAnterior + sumPurchases + sumInterest;
       const diff = Math.abs(calculatedTotal - totalFatura);
       const pctDiff = totalFatura > 0 ? (diff / totalFatura) * 100 : 0;
-      console.log(`Validation: total_fatura=${totalFatura}, calculated=${calculatedTotal.toFixed(2)}, diff=${diff.toFixed(2)} (${pctDiff.toFixed(1)}%)`);
-      console.log(`  Purchases: ${sumPurchases.toFixed(2)}, Interest: ${sumInterest.toFixed(2)}, Payments: ${sumPayments.toFixed(2)}`);
+      console.log(`Validation: total_fatura=${totalFatura}, saldo_anterior=${saldoAnterior}, calculated=${calculatedTotal.toFixed(2)}, diff=${diff.toFixed(2)} (${pctDiff.toFixed(1)}%)`);
+      console.log(`  Purchases: ${sumPurchases.toFixed(2)}, Interest: ${sumInterest.toFixed(2)}`);
     }
 
     // Delete any existing transactions for this statement (reprocessing)
