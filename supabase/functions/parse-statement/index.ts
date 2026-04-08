@@ -6,6 +6,92 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
+const SYSTEM_PROMPT = `Você é um especialista em extrair lançamentos de faturas de cartão de crédito brasileiro. Sua tarefa é extrair os dados com PRECISÃO ABSOLUTA.
+
+═══════════════════════════════════════
+COMO INTERPRETAR O RESUMO DA FATURA
+═══════════════════════════════════════
+O resumo da fatura brasileira geralmente mostra:
+- "Fatura anterior": valor total da fatura do mês passado
+- "Pagamento recebido": quanto o cliente pagou da fatura anterior
+- "Saldo financiado" / "Saldo restante": fatura anterior MENOS pagamento recebido
+- "Juros de financiamento": juros sobre o saldo financiado
+- "IOF de financiamento": imposto sobre o financiamento
+- "Total de compras": soma de todas as compras novas do período
+- "Total a pagar" / "Valor da fatura": o valor final que o cliente deve pagar
+
+IMPORTANTE SOBRE O SALDO ANTERIOR:
+- O "saldo_anterior" que você deve retornar é o SALDO FINANCIADO (saldo restante após pagamento), NÃO o valor total da "fatura anterior".
+- Fórmula: saldo_anterior = Fatura anterior - Pagamento recebido
+- Se a fatura mostrar "Saldo financiado: R$ 1.584,72", use 1584.72 como saldo_anterior.
+- Se não houver "Saldo financiado" explícito, calcule: Fatura anterior - Pagamento recebido.
+- Se não houver saldo anterior ou fatura anterior, use 0.
+
+═══════════════════════════════════════
+REGRAS DE EXTRAÇÃO DE TRANSAÇÕES
+═══════════════════════════════════════
+EXTRAIA APENAS transações que aparecem na LISTA DE TRANSAÇÕES/LANÇAMENTOS:
+✅ Compras nacionais e internacionais (valor em REAIS)
+✅ Parcelas individuais de compras parceladas
+✅ Assinaturas (streaming, apps, etc.)
+✅ Seguros e anuidade do cartão
+✅ Juros rotativos / juros de financiamento (lançamento individual na lista de transações)
+✅ IOF (lançamento individual na lista de transações)
+✅ Multa por atraso (lançamento individual)
+✅ Saques / empréstimos no cartão
+
+NÃO EXTRAIA como transações:
+❌ "Pagamento recebido" / "Pagamento em DD/MM" — estes são pagamentos da fatura ANTERIOR, já refletidos no saldo financiado
+❌ "Crédito de rotativo" / "Crédito de financiamento" — é uma entrada técnica contábil, NÃO é transação real
+❌ Linhas de resumo, totais, subtotais
+❌ "Saldo anterior" / "Fatura anterior"
+❌ Seção "Demonstrativo de encargos" (informativa)
+❌ CET, taxas informativas, limites de crédito
+❌ Estornos que já estão descontados do total
+
+REGRAS ANTI-DUPLICAÇÃO:
+1. Juros e IOF: extraia APENAS da lista de transações, NUNCA do resumo.
+2. Se o mesmo valor aparecer no resumo E na lista de transações, extraia APENAS da lista.
+3. NUNCA extraia subtotais como "Total de compras", "Total de encargos".
+
+═══════════════════════════════════════
+VALIDAÇÃO OBRIGATÓRIA
+═══════════════════════════════════════
+A fórmula do valor total da fatura é:
+Total = Saldo financiado + Juros + IOF + Compras
+
+Antes de responder, VALIDE:
+1. Localize o "TOTAL A PAGAR" no documento.
+2. Calcule: saldo_anterior + soma das transações extraídas ≈ Total a pagar
+3. Se houver discrepância > 1%, revise. Provavelmente você incluiu pagamentos/créditos indevidos ou errou o saldo_anterior.
+
+═══════════════════════════════════════
+FORMATO DE RESPOSTA
+═══════════════════════════════════════
+Responda APENAS com um JSON object válido (sem markdown, sem backticks):
+{
+  "total_fatura": <número com o total a pagar como impresso no documento, ou null>,
+  "saldo_anterior": <número com o SALDO FINANCIADO (fatura anterior - pagamento recebido), ou 0>,
+  "fatura_anterior": <número com o valor da fatura anterior, ou 0>,
+  "pagamento_anterior": <número com o pagamento recebido da fatura anterior, ou 0>,
+  "transactions": [
+    {
+      "date": "YYYY-MM-DD",
+      "description": "<descrição ORIGINAL como aparece na fatura>",
+      "amount": <valor numérico positivo>,
+      "category": "<categoria>",
+      "type": "<tipo>"
+    }
+  ]
+}
+
+Categorias válidas: "Alimentação", "Transporte", "Compras", "Saúde", "Lazer", "Serviços", "Educação", "Moradia", "Assinatura", "Juros/Encargos", "Pagamento", "Outros"
+Tipos válidos: "purchase" (compras/débitos), "interest" (juros/IOF/multa/encargos)
+
+ATENÇÃO: NÃO use type "payment". Pagamentos da fatura anterior já estão refletidos no saldo_anterior.
+Se não souber a data exata de um lançamento, use o primeiro dia do mês da fatura.`;
+
+const USER_MESSAGE = "Extraia todos os lançamentos desta fatura de cartão de crédito. IMPORTANTE: (1) Use o SALDO FINANCIADO como saldo_anterior (fatura anterior - pagamento), NÃO o valor total da fatura anterior. (2) NÃO inclua pagamentos da fatura anterior nem créditos de rotativo como transações. (3) Inclua APENAS compras e juros/IOF individuais da lista de transações.";
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -131,101 +217,14 @@ Deno.serve(async (req) => {
             messages: [
               {
                 role: "system",
-                content: `Você é um especialista em extrair lançamentos de faturas de cartão de crédito brasileiro. Sua tarefa é extrair os dados com PRECISÃO ABSOLUTA, garantindo que a soma dos lançamentos bata exatamente com o valor total da fatura.
-
-═══════════════════════════════════════
-ESTRUTURA TÍPICA DE UMA FATURA BRASILEIRA
-═══════════════════════════════════════
-Uma fatura de cartão de crédito brasileiro geralmente contém:
-- RESUMO DA FATURA: total anterior, pagamento anterior, novas compras, encargos, total atual — ESTES SÃO RESUMOS, NÃO LANÇAMENTOS.
-- LANÇAMENTOS DE COMPRAS: lista detalhada de cada compra com data, descrição e valor.
-- ENCARGOS FINANCEIROS: juros rotativos, IOF, multa, mora — aparecem como lançamentos individuais.
-- PAGAMENTOS: pagamentos efetuados no período.
-
-═══════════════════════════════════════
-REGRAS ANTI-DUPLICAÇÃO (CRÍTICO!)
-═══════════════════════════════════════
-1. JUROS e ENCARGOS: Extraia APENAS os lançamentos INDIVIDUAIS de juros/encargos que aparecem na lista de transações. 
-   - NÃO extraia da seção de "Resumo" ou "Demonstrativo de encargos". Essas seções são INFORMATIVAS e duplicam os valores já listados nas transações.
-   - Se a fatura listar "JUROS ROTATIVOS R$ 50,00" na seção de transações E TAMBÉM mostrar "Encargos: R$ 50,00" no resumo, extraia APENAS UMA VEZ (a da seção de transações).
-   - Se houver um "DEMONSTRATIVO DE ENCARGOS" detalhando CET, taxas mensais/anuais, etc., isso é INFORMATIVO — NÃO são transações.
-   
-2. IOF: O IOF geralmente aparece como lançamento separado na lista de transações. Extraia-o UMA ÚNICA VEZ.
-   - Se o IOF aparecer tanto no resumo quanto nas transações, use APENAS o das transações.
-
-3. SUBTOTAIS e TOTAIS: NUNCA extraia linhas que representam:
-   - "Total da fatura", "Total geral", "Valor total", "Total a pagar"
-   - "Subtotal compras nacionais", "Subtotal compras internacionais"  
-   - "Saldo anterior", "Saldo da fatura anterior"
-   - "Total de encargos financeiros" (é um subtotal)
-   - "Créditos/Débitos" (quando é um subtotal de seção)
-   
-4. SALDO ANTERIOR: NUNCA inclua o saldo anterior como transação. Ele é apenas referência.
-
-5. PARCELAMENTOS: Cada parcela individual que aparece na fatura é UM lançamento. NÃO duplique.
-   - Se aparecer "LOJA X PARCELA 3/10 R$50,00", isso é UMA transação de R$50,00.
-
-═══════════════════════════════════════
-O QUE EXTRAIR
-═══════════════════════════════════════
-✅ Compras nacionais (lojas, restaurantes, combustível, etc.)
-✅ Compras internacionais (usar o valor em REAIS quando disponível)
-✅ Parcelas individuais de compras parceladas
-✅ Assinaturas (streaming, apps, etc.)
-✅ Seguros e anuidade do cartão
-✅ Juros rotativos (lançamento individual, NÃO do resumo)
-✅ IOF (lançamento individual, NÃO do resumo)
-✅ Multa por atraso (lançamento individual)
-✅ Pagamento efetuado / crédito em conta
-✅ Estornos / devoluções (como payment)
-✅ Saques / empréstimos no cartão
-
-O QUE NÃO EXTRAIR
-❌ Linhas de resumo / sumário da fatura
-❌ Linhas de "Total" ou "Subtotal"
-❌ "Saldo anterior" / "Saldo da fatura anterior"
-❌ Seção "Demonstrativo de encargos" (é informativa)
-❌ CET (Custo Efetivo Total) — é informativo
-❌ Taxas informativas (taxa mensal, taxa anual)
-❌ Limites de crédito, limite disponível
-
-═══════════════════════════════════════
-VALIDAÇÃO OBRIGATÓRIA
-═══════════════════════════════════════
-Antes de responder, VALIDE:
-1. Localize o "TOTAL DA FATURA" ou "VALOR A PAGAR" no documento.
-2. Calcule: Total de compras + encargos - pagamentos = deve ser ≈ Total da fatura.
-3. Se houver discrepância > 1%, revise os lançamentos antes de responder.
-
-═══════════════════════════════════════
-FORMATO DE RESPOSTA
-═══════════════════════════════════════
-Responda APENAS com um JSON object válido (sem markdown, sem backticks):
-{
-  "total_fatura": <número com o total da fatura/valor a pagar como impresso no documento, ou null se não encontrado>,
-  "saldo_anterior": <número com o saldo anterior/valor da fatura anterior que ficou em aberto, ou 0 se não houver ou não encontrado>,
-  "transactions": [
-    {
-      "date": "YYYY-MM-DD",
-      "description": "<descrição ORIGINAL como aparece na fatura>",
-      "amount": <valor numérico positivo, use ponto como separador decimal>,
-      "category": "<categoria>",
-      "type": "<tipo>"
-    }
-  ]
-}
-
-Categorias válidas: "Alimentação", "Transporte", "Compras", "Saúde", "Lazer", "Serviços", "Educação", "Moradia", "Assinatura", "Juros/Encargos", "Pagamento", "Outros"
-Tipos válidos: "purchase" (compras/débitos), "payment" (pagamentos/créditos/estornos), "interest" (juros/IOF/multa/encargos)
-
-Se não souber a data exata de um lançamento, use o primeiro dia do mês da fatura.`,
+                content: SYSTEM_PROMPT,
               },
               {
                 role: "user",
                 content: [
                   {
                     type: "text",
-                    text: "Extraia todos os lançamentos desta fatura de cartão de crédito. Lembre-se: NÃO duplique juros/encargos que aparecem tanto no resumo quanto na lista de transações. Extraia APENAS da lista de transações.",
+                    text: USER_MESSAGE,
                   },
                   {
                     type: "image_url",
@@ -296,98 +295,11 @@ Se não souber a data exata de um lançamento, use o primeiro dia do mês da fat
             messages: [
               {
                 role: "system",
-                content: `Você é um especialista em extrair lançamentos de faturas de cartão de crédito brasileiro. Sua tarefa é extrair os dados com PRECISÃO ABSOLUTA, garantindo que a soma dos lançamentos bata exatamente com o valor total da fatura.
-
-═══════════════════════════════════════
-ESTRUTURA TÍPICA DE UMA FATURA BRASILEIRA
-═══════════════════════════════════════
-Uma fatura de cartão de crédito brasileiro geralmente contém:
-- RESUMO DA FATURA: total anterior, pagamento anterior, novas compras, encargos, total atual — ESTES SÃO RESUMOS, NÃO LANÇAMENTOS.
-- LANÇAMENTOS DE COMPRAS: lista detalhada de cada compra com data, descrição e valor.
-- ENCARGOS FINANCEIROS: juros rotativos, IOF, multa, mora — aparecem como lançamentos individuais.
-- PAGAMENTOS: pagamentos efetuados no período.
-
-═══════════════════════════════════════
-REGRAS ANTI-DUPLICAÇÃO (CRÍTICO!)
-═══════════════════════════════════════
-1. JUROS e ENCARGOS: Extraia APENAS os lançamentos INDIVIDUAIS de juros/encargos que aparecem na lista de transações. 
-   - NÃO extraia da seção de "Resumo" ou "Demonstrativo de encargos". Essas seções são INFORMATIVAS e duplicam os valores já listados nas transações.
-   - Se a fatura listar "JUROS ROTATIVOS R$ 50,00" na seção de transações E TAMBÉM mostrar "Encargos: R$ 50,00" no resumo, extraia APENAS UMA VEZ (a da seção de transações).
-   - Se houver um "DEMONSTRATIVO DE ENCARGOS" detalhando CET, taxas mensais/anuais, etc., isso é INFORMATIVO — NÃO são transações.
-   
-2. IOF: O IOF geralmente aparece como lançamento separado na lista de transações. Extraia-o UMA ÚNICA VEZ.
-   - Se o IOF aparecer tanto no resumo quanto nas transações, use APENAS o das transações.
-
-3. SUBTOTAIS e TOTAIS: NUNCA extraia linhas que representam:
-   - "Total da fatura", "Total geral", "Valor total", "Total a pagar"
-   - "Subtotal compras nacionais", "Subtotal compras internacionais"  
-   - "Saldo anterior", "Saldo da fatura anterior"
-   - "Total de encargos financeiros" (é um subtotal)
-   - "Créditos/Débitos" (quando é um subtotal de seção)
-   
-4. SALDO ANTERIOR: NUNCA inclua o saldo anterior como transação. Ele é apenas referência.
-
-5. PARCELAMENTOS: Cada parcela individual que aparece na fatura é UM lançamento. NÃO duplique.
-   - Se aparecer "LOJA X PARCELA 3/10 R$50,00", isso é UMA transação de R$50,00.
-
-═══════════════════════════════════════
-O QUE EXTRAIR
-═══════════════════════════════════════
-✅ Compras nacionais (lojas, restaurantes, combustível, etc.)
-✅ Compras internacionais (usar o valor em REAIS quando disponível)
-✅ Parcelas individuais de compras parceladas
-✅ Assinaturas (streaming, apps, etc.)
-✅ Seguros e anuidade do cartão
-✅ Juros rotativos (lançamento individual, NÃO do resumo)
-✅ IOF (lançamento individual, NÃO do resumo)
-✅ Multa por atraso (lançamento individual)
-✅ Pagamento efetuado / crédito em conta
-✅ Estornos / devoluções (como payment)
-✅ Saques / empréstimos no cartão
-
-O QUE NÃO EXTRAIR
-❌ Linhas de resumo / sumário da fatura
-❌ Linhas de "Total" ou "Subtotal"
-❌ "Saldo anterior" / "Saldo da fatura anterior"
-❌ Seção "Demonstrativo de encargos" (é informativa)
-❌ CET (Custo Efetivo Total) — é informativo
-❌ Taxas informativas (taxa mensal, taxa anual)
-❌ Limites de crédito, limite disponível
-
-═══════════════════════════════════════
-VALIDAÇÃO OBRIGATÓRIA
-═══════════════════════════════════════
-Antes de responder, VALIDE:
-1. Localize o "TOTAL DA FATURA" ou "VALOR A PAGAR" no documento.
-2. Calcule: Total de compras + encargos - pagamentos = deve ser ≈ Total da fatura.
-3. Se houver discrepância > 1%, revise os lançamentos antes de responder.
-
-═══════════════════════════════════════
-FORMATO DE RESPOSTA
-═══════════════════════════════════════
-Responda APENAS com um JSON object válido (sem markdown, sem backticks):
-{
-  "total_fatura": <número com o total da fatura/valor a pagar como impresso no documento, ou null se não encontrado>,
-  "saldo_anterior": <número com o saldo anterior/valor da fatura anterior que ficou em aberto, ou 0 se não houver ou não encontrado>,
-  "transactions": [
-    {
-      "date": "YYYY-MM-DD",
-      "description": "<descrição ORIGINAL como aparece na fatura>",
-      "amount": <valor numérico positivo, use ponto como separador decimal>,
-      "category": "<categoria>",
-      "type": "<tipo>"
-    }
-  ]
-}
-
-Categorias válidas: "Alimentação", "Transporte", "Compras", "Saúde", "Lazer", "Serviços", "Educação", "Moradia", "Assinatura", "Juros/Encargos", "Pagamento", "Outros"
-Tipos válidos: "purchase" (compras/débitos), "payment" (pagamentos/créditos/estornos), "interest" (juros/IOF/multa/encargos)
-
-Se não souber a data exata de um lançamento, use o primeiro dia do mês da fatura.`,
+                content: SYSTEM_PROMPT,
               },
               {
                 role: "user",
-                content: `Extraia todos os lançamentos desta fatura de cartão de crédito. Lembre-se: NÃO duplique juros/encargos que aparecem tanto no resumo quanto na lista de transações. Extraia APENAS da lista de transações.\n\n${fileContent}`,
+                content: `${USER_MESSAGE}\n\n${fileContent}`,
               },
             ],
           }),
@@ -518,23 +430,21 @@ async function processAIResponse(
     }
     transactions = deduplicated;
 
-    // ── Validation: check extracted total vs statement total ──
+    // ── Validation: check saldo_anterior + transactions ≈ total_fatura ──
     if (totalFatura != null && totalFatura > 0) {
       let sumPurchases = 0;
       let sumInterest = 0;
-      let sumPayments = 0;
       for (const t of transactions) {
         const amt = Math.abs(Number(t.amount));
         const type = t.type || "purchase";
-        if (type === "payment") sumPayments += amt;
-        else if (type === "interest") sumInterest += amt;
+        if (type === "interest") sumInterest += amt;
         else sumPurchases += amt;
       }
-      const calculatedTotal = sumPurchases + sumInterest - sumPayments;
+      const calculatedTotal = saldoAnterior + sumPurchases + sumInterest;
       const diff = Math.abs(calculatedTotal - totalFatura);
       const pctDiff = totalFatura > 0 ? (diff / totalFatura) * 100 : 0;
-      console.log(`Validation: total_fatura=${totalFatura}, calculated=${calculatedTotal.toFixed(2)}, diff=${diff.toFixed(2)} (${pctDiff.toFixed(1)}%)`);
-      console.log(`  Purchases: ${sumPurchases.toFixed(2)}, Interest: ${sumInterest.toFixed(2)}, Payments: ${sumPayments.toFixed(2)}`);
+      console.log(`Validation: total_fatura=${totalFatura}, saldo_anterior=${saldoAnterior}, calculated=${calculatedTotal.toFixed(2)}, diff=${diff.toFixed(2)} (${pctDiff.toFixed(1)}%)`);
+      console.log(`  Purchases: ${sumPurchases.toFixed(2)}, Interest: ${sumInterest.toFixed(2)}`);
     }
 
     // Delete any existing transactions for this statement (reprocessing)
