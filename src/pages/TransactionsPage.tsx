@@ -168,7 +168,10 @@ export default function TransactionsPage() {
     const totalFaturaDoc = selectedStmt ? Number(selectedStmt.total_fatura) || 0 : 0;
 
     const totalCharges = purchases + interest;
-    const openBalance = previousBalance + totalCharges - payments;
+    // Use total_fatura from the document as the authoritative "Valor a Pagar"
+    // Fallback to calculated value if total_fatura is not available
+    const calculatedBalance = previousBalance + totalCharges - payments;
+    const openBalance = totalFaturaDoc > 0 ? totalFaturaDoc : (calculatedBalance > 0 ? calculatedBalance : 0);
     const unassignedTotal = totalCharges - assignedTotal;
     return { purchases, payments, interest, openBalance, totalCharges, byUser, unassignedTotal, assignedTotal, count: transactions.length, previousBalance, totalFaturaDoc };
   }, [transactions, profileMap, statements, selectedStatement]);
