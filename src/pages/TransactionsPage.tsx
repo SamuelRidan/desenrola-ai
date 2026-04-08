@@ -162,16 +162,16 @@ export default function TransactionsPage() {
       }
     }
 
-    // Get previous_balance from selected statement
+    // Get previous_balance and total_fatura from selected statement
     const selectedStmt = statements?.find((s: any) => s.id === selectedStatement);
     const previousBalance = selectedStmt ? Number(selectedStmt.previous_balance) || 0 : 0;
     const totalFaturaDoc = selectedStmt ? Number(selectedStmt.total_fatura) || 0 : 0;
 
     const totalCharges = purchases + interest;
-    // Use total_fatura from the document as the authoritative "Valor a Pagar"
-    // Fallback to calculated value if total_fatura is not available
-    const calculatedBalance = previousBalance + totalCharges - payments;
-    const openBalance = totalFaturaDoc > 0 ? totalFaturaDoc : (calculatedBalance > 0 ? calculatedBalance : 0);
+    // Formula: Saldo Anterior + Compras + Juros = Valor a Pagar
+    // Use total_fatura from document as authoritative value, fallback to calculated
+    const calculatedBalance = previousBalance + totalCharges;
+    const openBalance = totalFaturaDoc > 0 ? totalFaturaDoc : calculatedBalance;
     const unassignedTotal = totalCharges - assignedTotal;
     return { purchases, payments, interest, openBalance, totalCharges, byUser, unassignedTotal, assignedTotal, count: transactions.length, previousBalance, totalFaturaDoc };
   }, [transactions, profileMap, statements, selectedStatement]);
