@@ -460,16 +460,22 @@ async function processAIResponse(
       .eq("statement_id", statementId);
 
     // Insert transactions
-    const validTypes = ["purchase", "payment", "interest"];
-    const transactionsToInsert = transactions.map((t: any) => ({
-      statement_id: statementId,
-      date: t.date,
-      description: t.description,
-      amount: Math.abs(Number(t.amount)),
-      category: t.category || null,
-      type: validTypes.includes(t.type) ? t.type : "purchase",
-      is_reviewed: false,
-    }));
+    const validTypes = ["purchase", "payment", "interest", "refund"];
+    const transactionsToInsert = transactions.map((t: any) => {
+      const type = validTypes.includes(t.type) ? t.type : "purchase";
+      const rawAmount = Number(t.amount);
+      // Preserve negative amounts for refunds/chargebacks, use abs for others
+      const amount = type === "refund" ? -Math.abs(rawAmount) : (rawAmount < 0 ? rawAmount : Math.abs(rawAmount));
+      return {
+        statement_id: statementId,
+        date: t.date,
+        description: t.description,
+        amount,
+        category: t.category || null,
+        type: type === "refund" ? "purchase" : type, // store as purchase with negative amount
+        is_reviewed: false,
+      };
+    });
 
     const { error: insertError } = await adminClient
       .from("transactions")
