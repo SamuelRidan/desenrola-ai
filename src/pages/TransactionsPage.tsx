@@ -63,6 +63,18 @@ export default function TransactionsPage() {
     },
   });
 
+  // Auto-select latest statement
+  useEffect(() => {
+    if (!selectedStatement && statements && statements.length > 0) {
+      const sorted = [...statements].sort((a: any, b: any) => 
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+      setSelectedStatement(sorted[0].id);
+    }
+  }, [statements, selectedStatement]);
+
+  const effectiveStatement = selectedStatement || "all";
+
   const { data: transactions, isLoading } = useQuery({
      queryKey: ["transactions", effectiveStatement, search],
     queryFn: async () => {
