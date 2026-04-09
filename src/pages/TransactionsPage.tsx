@@ -567,7 +567,7 @@ export default function TransactionsPage() {
                           </div>
                         </td>
                         <td className="p-3 whitespace-nowrap">
-                          {getTypeBadge(t.type || "purchase")}
+                          {getTypeBadge(t.type || "purchase", Number(t.amount))}
                         </td>
                         <td className="p-3 whitespace-nowrap">
                           {t.category ? (
