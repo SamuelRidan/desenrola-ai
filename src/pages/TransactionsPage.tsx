@@ -146,12 +146,11 @@ export default function TransactionsPage() {
     return "all";
   }, [selectedStatement, statements]);
 
-  // Set state when auto-selected
-  useMemo(() => {
-    if (!selectedStatement && effectiveStatement && effectiveStatement !== "all") {
-      setSelectedStatement(effectiveStatement);
-    }
-  }, [effectiveStatement]);
+  // Set state when auto-selected  
+  if (!selectedStatement && effectiveStatement && effectiveStatement !== "all" && statements && statements.length > 0) {
+    // Use setTimeout to avoid setState during render
+    setTimeout(() => setSelectedStatement(effectiveStatement), 0);
+  }
 
   const summary = useMemo(() => {
     if (!transactions || transactions.length === 0) return null;
