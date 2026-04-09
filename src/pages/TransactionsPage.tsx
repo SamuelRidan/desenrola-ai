@@ -64,15 +64,15 @@ export default function TransactionsPage() {
   });
 
   const { data: transactions, isLoading } = useQuery({
-    queryKey: ["transactions", selectedStatement, search],
+     queryKey: ["transactions", effectiveStatement, search],
     queryFn: async () => {
       let query = supabase
         .from("transactions")
         .select("*, statements(month, year, credit_cards(name)), transaction_assignments(user_id, share_amount)")
         .order("date", { ascending: false });
 
-      if (selectedStatement && selectedStatement !== "all") {
-        query = query.eq("statement_id", selectedStatement);
+      if (effectiveStatement && effectiveStatement !== "all") {
+        query = query.eq("statement_id", effectiveStatement);
       }
       if (search.trim()) {
         query = query.ilike("description", `%${search}%`);
