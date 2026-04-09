@@ -79,7 +79,7 @@ Responda APENAS com um JSON object válido (sem markdown, sem backticks):
     {
       "date": "YYYY-MM-DD",
       "description": "<descrição ORIGINAL como aparece na fatura>",
-      "amount": <valor numérico positivo>,
+      "amount": <valor numérico — positivo para compras/juros, NEGATIVO para estornos/devoluções>,
       "category": "<categoria>",
       "type": "<tipo>"
     }
