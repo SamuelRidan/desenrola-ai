@@ -86,8 +86,8 @@ Responda APENAS com um JSON object válido (sem markdown, sem backticks):
   ]
 }
 
-Categorias válidas: "Alimentação", "Transporte", "Compras", "Saúde", "Lazer", "Serviços", "Educação", "Moradia", "Assinatura", "Juros/Encargos", "Pagamento", "Outros"
-Tipos válidos: "purchase" (compras/débitos), "interest" (juros/IOF/multa/encargos)
+Categorias válidas: "Alimentação", "Transporte", "Compras", "Saúde", "Lazer", "Serviços", "Educação", "Moradia", "Assinatura", "Juros/Encargos", "Pagamento", "Estorno", "Outros"
+Tipos válidos: "purchase" (compras/débitos — valor positivo), "interest" (juros/IOF/multa/encargos — valor positivo), "refund" (estornos/devoluções — valor NEGATIVO)
 
 ATENÇÃO: NÃO use type "payment". Pagamentos da fatura anterior já estão refletidos no saldo_anterior.
 Se não souber a data exata de um lançamento, use o primeiro dia do mês da fatura.`;
