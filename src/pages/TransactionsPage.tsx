@@ -220,8 +220,8 @@ export default function TransactionsPage() {
               )}
             </div>
           </div>
-          <p className={`text-base font-heading font-bold whitespace-nowrap ${type === "payment" ? "text-green-600" : type === "interest" ? "text-destructive" : ""}`}>
-            {type === "payment" ? "- " : ""}R$ {Number(t.amount).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+          <p className={`text-base font-heading font-bold whitespace-nowrap ${type === "payment" || Number(t.amount) < 0 ? "text-green-600" : type === "interest" ? "text-destructive" : ""}`}>
+            {type === "payment" ? "- " : ""}{Number(t.amount) < 0 ? "- " : ""}R$ {Math.abs(Number(t.amount)).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
           </p>
         </div>
 
