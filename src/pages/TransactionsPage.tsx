@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
@@ -32,9 +32,10 @@ function getInitials(name: string) {
     .toUpperCase();
 }
 
-function getTypeBadge(type: string) {
+function getTypeBadge(type: string, amount: number) {
+  const isRefund = amount < 0;
   const config: Record<string, { label: string; cls: string }> = {
-    purchase: { label: "Compra", cls: "bg-primary/10 text-primary border-primary/20" },
+    purchase: { label: isRefund ? "Estorno" : "Compra", cls: isRefund ? "bg-blue-500/10 text-blue-700 border-blue-500/20" : "bg-primary/10 text-primary border-primary/20" },
     payment: { label: "Pagamento", cls: "bg-green-500/10 text-green-700 border-green-500/20" },
     interest: { label: "Juros", cls: "bg-destructive/10 text-destructive border-destructive/20" },
   };
@@ -46,7 +47,7 @@ export default function TransactionsPage() {
   const { role } = useAuth();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
-  const [selectedStatement, setSelectedStatement] = useState<string>("all");
+  const [selectedStatement, setSelectedStatement] = useState<string>("");
   const [assignTx, setAssignTx] = useState<{ id: string; amount: number; description: string } | null>(null);
   const [showAddDialog, setShowAddDialog] = useState(false);
 
@@ -62,16 +63,28 @@ export default function TransactionsPage() {
     },
   });
 
+  // Auto-select latest statement
+  useEffect(() => {
+    if (!selectedStatement && statements && statements.length > 0) {
+      const sorted = [...statements].sort((a: any, b: any) => 
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+      setSelectedStatement(sorted[0].id);
+    }
+  }, [statements, selectedStatement]);
+
+  const effectiveStatement = selectedStatement || "all";
+
   const { data: transactions, isLoading } = useQuery({
-    queryKey: ["transactions", selectedStatement, search],
+     queryKey: ["transactions", effectiveStatement, search],
     queryFn: async () => {
       let query = supabase
         .from("transactions")
         .select("*, statements(month, year, credit_cards(name)), transaction_assignments(user_id, share_amount)")
         .order("date", { ascending: false });
 
-      if (selectedStatement && selectedStatement !== "all") {
-        query = query.eq("statement_id", selectedStatement);
+      if (effectiveStatement && effectiveStatement !== "all") {
+        query = query.eq("statement_id", effectiveStatement);
       }
       if (search.trim()) {
         query = query.ilike("description", `%${search}%`);
@@ -132,24 +145,28 @@ export default function TransactionsPage() {
     return map;
   }, [profileMap]);
 
+
+
   const summary = useMemo(() => {
     if (!transactions || transactions.length === 0) return null;
 
     let purchases = 0;
     let payments = 0;
     let interest = 0;
+    let refunds = 0;
     const byUser: Record<string, { name: string; total: number; txCount: number }> = {};
     let assignedTotal = 0;
 
     for (const t of transactions) {
       const amt = Number(t.amount) || 0;
       const type = t.type || "purchase";
-      if (type === "payment") payments += amt;
-      else if (type === "interest") interest += amt;
+      if (type === "payment") payments += Math.abs(amt);
+      else if (type === "interest") interest += Math.abs(amt);
+      else if (amt < 0) refunds += Math.abs(amt);
       else purchases += amt;
 
       const assigns = t.transaction_assignments;
-      if (assigns && assigns.length > 0 && type !== "payment") {
+      if (assigns && assigns.length > 0 && type !== "payment" && amt > 0) {
         for (const a of assigns) {
           const uid = a.user_id;
           const share = Number(a.share_amount) || 0;
@@ -163,18 +180,17 @@ export default function TransactionsPage() {
     }
 
     // Get previous_balance and total_fatura from selected statement
-    const selectedStmt = statements?.find((s: any) => s.id === selectedStatement);
+    const selectedStmt = statements?.find((s: any) => s.id === effectiveStatement);
     const previousBalance = selectedStmt ? Number(selectedStmt.previous_balance) || 0 : 0;
     const totalFaturaDoc = selectedStmt ? Number(selectedStmt.total_fatura) || 0 : 0;
 
-    const totalCharges = purchases + interest;
-    // Formula: Saldo Anterior + Compras + Juros = Valor a Pagar
-    // Use total_fatura from document as authoritative value, fallback to calculated
+    const totalCharges = purchases + interest - refunds;
+    // Formula: Saldo Anterior + Compras + Juros - Estornos = Valor a Pagar
     const calculatedBalance = previousBalance + totalCharges;
     const openBalance = totalFaturaDoc > 0 ? totalFaturaDoc : calculatedBalance;
     const unassignedTotal = totalCharges - assignedTotal;
-    return { purchases, payments, interest, openBalance, totalCharges, byUser, unassignedTotal, assignedTotal, count: transactions.length, previousBalance, totalFaturaDoc };
-  }, [transactions, profileMap, statements, selectedStatement]);
+    return { purchases, payments, interest, refunds, openBalance, totalCharges, byUser, unassignedTotal, assignedTotal, count: transactions.length, previousBalance, totalFaturaDoc };
+  }, [transactions, profileMap, statements, effectiveStatement]);
 
   const formatBRL = (v: number) => v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -198,14 +214,14 @@ export default function TransactionsPage() {
               <span className="text-xs text-muted-foreground">
                 {new Date(t.date).toLocaleDateString("pt-BR")}
               </span>
-              {getTypeBadge(type)}
+              {getTypeBadge(type, Number(t.amount))}
               {t.category && (
                 <Badge variant="outline" className="text-[10px] font-normal">{t.category}</Badge>
               )}
             </div>
           </div>
-          <p className={`text-base font-heading font-bold whitespace-nowrap ${type === "payment" ? "text-green-600" : type === "interest" ? "text-destructive" : ""}`}>
-            {type === "payment" ? "- " : ""}R$ {Number(t.amount).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+          <p className={`text-base font-heading font-bold whitespace-nowrap ${type === "payment" || Number(t.amount) < 0 ? "text-green-600" : type === "interest" ? "text-destructive" : ""}`}>
+            {type === "payment" ? "- " : ""}{Number(t.amount) < 0 ? "- " : ""}R$ {Math.abs(Number(t.amount)).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
           </p>
         </div>
 
@@ -545,7 +561,7 @@ export default function TransactionsPage() {
                           </div>
                         </td>
                         <td className="p-3 whitespace-nowrap">
-                          {getTypeBadge(t.type || "purchase")}
+                          {getTypeBadge(t.type || "purchase", Number(t.amount))}
                         </td>
                         <td className="p-3 whitespace-nowrap">
                           {t.category ? (

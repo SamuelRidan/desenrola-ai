@@ -39,6 +39,7 @@ EXTRAIA APENAS transações que aparecem na LISTA DE TRANSAÇÕES/LANÇAMENTOS:
 ✅ IOF (lançamento individual na lista de transações)
 ✅ Multa por atraso (lançamento individual)
 ✅ Saques / empréstimos no cartão
+✅ Estornos / devoluções / créditos (valor NEGATIVO — use amount negativo, ex: -150.00)
 
 NÃO EXTRAIA como transações:
 ❌ "Pagamento recebido" / "Pagamento em DD/MM" — estes são pagamentos da fatura ANTERIOR, já refletidos no saldo financiado
@@ -47,7 +48,7 @@ NÃO EXTRAIA como transações:
 ❌ "Saldo anterior" / "Fatura anterior"
 ❌ Seção "Demonstrativo de encargos" (informativa)
 ❌ CET, taxas informativas, limites de crédito
-❌ Estornos que já estão descontados do total
+❌ Estornos que já estão descontados do total em uma linha de subtotal (mas EXTRAIA estornos individuais com valor NEGATIVO)
 
 REGRAS ANTI-DUPLICAÇÃO:
 1. Juros e IOF: extraia APENAS da lista de transações, NUNCA do resumo.
@@ -78,15 +79,15 @@ Responda APENAS com um JSON object válido (sem markdown, sem backticks):
     {
       "date": "YYYY-MM-DD",
       "description": "<descrição ORIGINAL como aparece na fatura>",
-      "amount": <valor numérico positivo>,
+      "amount": <valor numérico — positivo para compras/juros, NEGATIVO para estornos/devoluções>,
       "category": "<categoria>",
       "type": "<tipo>"
     }
   ]
 }
 
-Categorias válidas: "Alimentação", "Transporte", "Compras", "Saúde", "Lazer", "Serviços", "Educação", "Moradia", "Assinatura", "Juros/Encargos", "Pagamento", "Outros"
-Tipos válidos: "purchase" (compras/débitos), "interest" (juros/IOF/multa/encargos)
+Categorias válidas: "Alimentação", "Transporte", "Compras", "Saúde", "Lazer", "Serviços", "Educação", "Moradia", "Assinatura", "Juros/Encargos", "Pagamento", "Estorno", "Outros"
+Tipos válidos: "purchase" (compras/débitos — valor positivo), "interest" (juros/IOF/multa/encargos — valor positivo), "refund" (estornos/devoluções — valor NEGATIVO)
 
 ATENÇÃO: NÃO use type "payment". Pagamentos da fatura anterior já estão refletidos no saldo_anterior.
 Se não souber a data exata de um lançamento, use o primeiro dia do mês da fatura.`;
@@ -439,17 +440,19 @@ async function processAIResponse(
     if (totalFatura != null && totalFatura > 0) {
       let sumPurchases = 0;
       let sumInterest = 0;
+      let sumRefunds = 0;
       for (const t of transactions) {
-        const amt = Math.abs(Number(t.amount));
+        const amt = Number(t.amount);
         const type = t.type || "purchase";
-        if (type === "interest") sumInterest += amt;
-        else sumPurchases += amt;
+        if (type === "interest") sumInterest += Math.abs(amt);
+        else if (type === "refund" || amt < 0) sumRefunds += Math.abs(amt);
+        else sumPurchases += Math.abs(amt);
       }
-      const calculatedTotal = saldoAnterior + sumPurchases + sumInterest;
+      const calculatedTotal = saldoAnterior + sumPurchases + sumInterest - sumRefunds;
       const diff = Math.abs(calculatedTotal - totalFatura);
       const pctDiff = totalFatura > 0 ? (diff / totalFatura) * 100 : 0;
       console.log(`Validation: total_fatura=${totalFatura}, saldo_anterior=${saldoAnterior}, calculated=${calculatedTotal.toFixed(2)}, diff=${diff.toFixed(2)} (${pctDiff.toFixed(1)}%)`);
-      console.log(`  Purchases: ${sumPurchases.toFixed(2)}, Interest: ${sumInterest.toFixed(2)}`);
+      console.log(`  Purchases: ${sumPurchases.toFixed(2)}, Interest: ${sumInterest.toFixed(2)}, Refunds: ${sumRefunds.toFixed(2)}`);
     }
 
     // Delete any existing transactions for this statement (reprocessing)
@@ -459,16 +462,22 @@ async function processAIResponse(
       .eq("statement_id", statementId);
 
     // Insert transactions
-    const validTypes = ["purchase", "payment", "interest"];
-    const transactionsToInsert = transactions.map((t: any) => ({
-      statement_id: statementId,
-      date: t.date,
-      description: t.description,
-      amount: Math.abs(Number(t.amount)),
-      category: t.category || null,
-      type: validTypes.includes(t.type) ? t.type : "purchase",
-      is_reviewed: false,
-    }));
+    const validTypes = ["purchase", "payment", "interest", "refund"];
+    const transactionsToInsert = transactions.map((t: any) => {
+      const type = validTypes.includes(t.type) ? t.type : "purchase";
+      const rawAmount = Number(t.amount);
+      // Preserve negative amounts for refunds/chargebacks, use abs for others
+      const amount = type === "refund" ? -Math.abs(rawAmount) : (rawAmount < 0 ? rawAmount : Math.abs(rawAmount));
+      return {
+        statement_id: statementId,
+        date: t.date,
+        description: t.description,
+        amount,
+        category: t.category || null,
+        type: type === "refund" ? "purchase" : type, // store as purchase with negative amount
+        is_reviewed: false,
+      };
+    });
 
     const { error: insertError } = await adminClient
       .from("transactions")
