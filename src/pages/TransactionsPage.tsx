@@ -32,9 +32,10 @@ function getInitials(name: string) {
     .toUpperCase();
 }
 
-function getTypeBadge(type: string) {
+function getTypeBadge(type: string, amount: number) {
+  const isRefund = amount < 0;
   const config: Record<string, { label: string; cls: string }> = {
-    purchase: { label: "Compra", cls: "bg-primary/10 text-primary border-primary/20" },
+    purchase: { label: isRefund ? "Estorno" : "Compra", cls: isRefund ? "bg-blue-500/10 text-blue-700 border-blue-500/20" : "bg-primary/10 text-primary border-primary/20" },
     payment: { label: "Pagamento", cls: "bg-green-500/10 text-green-700 border-green-500/20" },
     interest: { label: "Juros", cls: "bg-destructive/10 text-destructive border-destructive/20" },
   };
