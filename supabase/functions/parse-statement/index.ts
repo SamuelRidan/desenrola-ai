@@ -48,7 +48,7 @@ NÃO EXTRAIA como transações:
 ❌ "Saldo anterior" / "Fatura anterior"
 ❌ Seção "Demonstrativo de encargos" (informativa)
 ❌ CET, taxas informativas, limites de crédito
-❌ Estornos que já estão descontados do total
+❌ Estornos que já estão descontados do total em uma linha de subtotal (mas EXTRAIA estornos individuais com valor NEGATIVO)
 
 REGRAS ANTI-DUPLICAÇÃO:
 1. Juros e IOF: extraia APENAS da lista de transações, NUNCA do resumo.
