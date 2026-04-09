@@ -145,24 +145,7 @@ export default function TransactionsPage() {
     return map;
   }, [profileMap]);
 
-  // Auto-select latest statement when data loads
-  const effectiveStatement = useMemo(() => {
-    if (selectedStatement) return selectedStatement;
-    if (statements && statements.length > 0) {
-      // Sort by created_at descending and pick the first
-      const sorted = [...statements].sort((a: any, b: any) => 
-        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-      );
-      return sorted[0].id;
-    }
-    return "all";
-  }, [selectedStatement, statements]);
 
-  // Set state when auto-selected  
-  if (!selectedStatement && effectiveStatement && effectiveStatement !== "all" && statements && statements.length > 0) {
-    // Use setTimeout to avoid setState during render
-    setTimeout(() => setSelectedStatement(effectiveStatement), 0);
-  }
 
   const summary = useMemo(() => {
     if (!transactions || transactions.length === 0) return null;
