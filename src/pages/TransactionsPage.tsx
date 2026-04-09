@@ -379,10 +379,15 @@ export default function TransactionsPage() {
                     <CreditCard className="w-4 h-4 md:w-5 md:h-5 text-primary" />
                   </div>
                   <div className="min-w-0">
-                    <p className="text-[10px] md:text-xs text-muted-foreground truncate">Compras</p>
+                    <p className="text-[10px] md:text-xs text-muted-foreground truncate">Compras (líquido)</p>
                     <p className="text-sm md:text-lg font-heading font-bold">
                       R$ {formatBRL(summary.purchases)}
                     </p>
+                    {summary.refunds > 0 && (
+                      <p className="text-[9px] md:text-[10px] text-muted-foreground">
+                        Bruto: R$ {formatBRL(summary.purchasesPositive)} · Estornos: -R$ {formatBRL(summary.refunds)}
+                      </p>
+                    )}
                   </div>
                 </CardContent>
               </Card>
