@@ -150,20 +150,25 @@ export default function TransactionsPage() {
   const summary = useMemo(() => {
     if (!transactions || transactions.length === 0) return null;
 
-    let purchases = 0;
+    let purchasesPositive = 0;
+    let purchasesNegative = 0;
     let payments = 0;
     let interest = 0;
-    let refunds = 0;
     const byUser: Record<string, { name: string; total: number; txCount: number }> = {};
     let assignedTotal = 0;
 
     for (const t of transactions) {
       const amt = Number(t.amount) || 0;
       const type = t.type || "purchase";
-      if (type === "payment") payments += Math.abs(amt);
-      else if (type === "interest") interest += Math.abs(amt);
-      else if (amt < 0) refunds += Math.abs(amt);
-      else purchases += amt;
+      if (type === "payment") {
+        payments += Math.abs(amt);
+      } else if (type === "interest") {
+        interest += amt; // net interest (includes any negative interest entries)
+      } else {
+        // type === "purchase" — includes refunds (negative amounts)
+        if (amt < 0) purchasesNegative += Math.abs(amt);
+        else purchasesPositive += amt;
+      }
 
       const assigns = t.transaction_assignments;
       if (assigns && assigns.length > 0 && type !== "payment" && amt > 0) {
@@ -179,17 +184,20 @@ export default function TransactionsPage() {
       }
     }
 
+    const purchases = purchasesPositive - purchasesNegative; // net purchases
+    const refunds = purchasesNegative;
+
     // Get previous_balance and total_fatura from selected statement
     const selectedStmt = statements?.find((s: any) => s.id === effectiveStatement);
     const previousBalance = selectedStmt ? Number(selectedStmt.previous_balance) || 0 : 0;
     const totalFaturaDoc = selectedStmt ? Number(selectedStmt.total_fatura) || 0 : 0;
 
-    const totalCharges = purchases + interest - refunds;
-    // Formula: Saldo Anterior + Compras + Juros - Estornos = Valor a Pagar
+    const totalCharges = purchases + interest;
+    // Formula: Saldo Anterior + Compras (líquido) + Juros = Valor a Pagar
     const calculatedBalance = previousBalance + totalCharges;
     const openBalance = totalFaturaDoc > 0 ? totalFaturaDoc : calculatedBalance;
     const unassignedTotal = totalCharges - assignedTotal;
-    return { purchases, payments, interest, refunds, openBalance, totalCharges, byUser, unassignedTotal, assignedTotal, count: transactions.length, previousBalance, totalFaturaDoc };
+    return { purchases, purchasesPositive, payments, interest, refunds, openBalance, totalCharges, byUser, unassignedTotal, assignedTotal, count: transactions.length, previousBalance, totalFaturaDoc };
   }, [transactions, profileMap, statements, effectiveStatement]);
 
   const formatBRL = (v: number) => v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
