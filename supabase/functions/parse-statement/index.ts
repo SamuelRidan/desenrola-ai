@@ -39,6 +39,7 @@ EXTRAIA APENAS transações que aparecem na LISTA DE TRANSAÇÕES/LANÇAMENTOS:
 ✅ IOF (lançamento individual na lista de transações)
 ✅ Multa por atraso (lançamento individual)
 ✅ Saques / empréstimos no cartão
+✅ Estornos / devoluções / créditos (valor NEGATIVO — use amount negativo, ex: -150.00)
 
 NÃO EXTRAIA como transações:
 ❌ "Pagamento recebido" / "Pagamento em DD/MM" — estes são pagamentos da fatura ANTERIOR, já refletidos no saldo financiado
