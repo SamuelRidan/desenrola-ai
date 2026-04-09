@@ -440,17 +440,19 @@ async function processAIResponse(
     if (totalFatura != null && totalFatura > 0) {
       let sumPurchases = 0;
       let sumInterest = 0;
+      let sumRefunds = 0;
       for (const t of transactions) {
-        const amt = Math.abs(Number(t.amount));
+        const amt = Number(t.amount);
         const type = t.type || "purchase";
-        if (type === "interest") sumInterest += amt;
-        else sumPurchases += amt;
+        if (type === "interest") sumInterest += Math.abs(amt);
+        else if (type === "refund" || amt < 0) sumRefunds += Math.abs(amt);
+        else sumPurchases += Math.abs(amt);
       }
-      const calculatedTotal = saldoAnterior + sumPurchases + sumInterest;
+      const calculatedTotal = saldoAnterior + sumPurchases + sumInterest - sumRefunds;
       const diff = Math.abs(calculatedTotal - totalFatura);
       const pctDiff = totalFatura > 0 ? (diff / totalFatura) * 100 : 0;
       console.log(`Validation: total_fatura=${totalFatura}, saldo_anterior=${saldoAnterior}, calculated=${calculatedTotal.toFixed(2)}, diff=${diff.toFixed(2)} (${pctDiff.toFixed(1)}%)`);
-      console.log(`  Purchases: ${sumPurchases.toFixed(2)}, Interest: ${sumInterest.toFixed(2)}`);
+      console.log(`  Purchases: ${sumPurchases.toFixed(2)}, Interest: ${sumInterest.toFixed(2)}, Refunds: ${sumRefunds.toFixed(2)}`);
     }
 
     // Delete any existing transactions for this statement (reprocessing)
