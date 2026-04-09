@@ -133,24 +133,46 @@ export default function TransactionsPage() {
     return map;
   }, [profileMap]);
 
+  // Auto-select latest statement when data loads
+  const effectiveStatement = useMemo(() => {
+    if (selectedStatement) return selectedStatement;
+    if (statements && statements.length > 0) {
+      // Sort by created_at descending and pick the first
+      const sorted = [...statements].sort((a: any, b: any) => 
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+      return sorted[0].id;
+    }
+    return "all";
+  }, [selectedStatement, statements]);
+
+  // Set state when auto-selected
+  useMemo(() => {
+    if (!selectedStatement && effectiveStatement && effectiveStatement !== "all") {
+      setSelectedStatement(effectiveStatement);
+    }
+  }, [effectiveStatement]);
+
   const summary = useMemo(() => {
     if (!transactions || transactions.length === 0) return null;
 
     let purchases = 0;
     let payments = 0;
     let interest = 0;
+    let refunds = 0;
     const byUser: Record<string, { name: string; total: number; txCount: number }> = {};
     let assignedTotal = 0;
 
     for (const t of transactions) {
       const amt = Number(t.amount) || 0;
       const type = t.type || "purchase";
-      if (type === "payment") payments += amt;
-      else if (type === "interest") interest += amt;
+      if (type === "payment") payments += Math.abs(amt);
+      else if (type === "interest") interest += Math.abs(amt);
+      else if (amt < 0) refunds += Math.abs(amt);
       else purchases += amt;
 
       const assigns = t.transaction_assignments;
-      if (assigns && assigns.length > 0 && type !== "payment") {
+      if (assigns && assigns.length > 0 && type !== "payment" && amt > 0) {
         for (const a of assigns) {
           const uid = a.user_id;
           const share = Number(a.share_amount) || 0;
@@ -164,18 +186,17 @@ export default function TransactionsPage() {
     }
 
     // Get previous_balance and total_fatura from selected statement
-    const selectedStmt = statements?.find((s: any) => s.id === selectedStatement);
+    const selectedStmt = statements?.find((s: any) => s.id === effectiveStatement);
     const previousBalance = selectedStmt ? Number(selectedStmt.previous_balance) || 0 : 0;
     const totalFaturaDoc = selectedStmt ? Number(selectedStmt.total_fatura) || 0 : 0;
 
-    const totalCharges = purchases + interest;
-    // Formula: Saldo Anterior + Compras + Juros = Valor a Pagar
-    // Use total_fatura from document as authoritative value, fallback to calculated
+    const totalCharges = purchases + interest - refunds;
+    // Formula: Saldo Anterior + Compras + Juros - Estornos = Valor a Pagar
     const calculatedBalance = previousBalance + totalCharges;
     const openBalance = totalFaturaDoc > 0 ? totalFaturaDoc : calculatedBalance;
     const unassignedTotal = totalCharges - assignedTotal;
-    return { purchases, payments, interest, openBalance, totalCharges, byUser, unassignedTotal, assignedTotal, count: transactions.length, previousBalance, totalFaturaDoc };
-  }, [transactions, profileMap, statements, selectedStatement]);
+    return { purchases, payments, interest, refunds, openBalance, totalCharges, byUser, unassignedTotal, assignedTotal, count: transactions.length, previousBalance, totalFaturaDoc };
+  }, [transactions, profileMap, statements, effectiveStatement]);
 
   const formatBRL = (v: number) => v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
