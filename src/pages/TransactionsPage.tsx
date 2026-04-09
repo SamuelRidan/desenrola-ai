@@ -220,7 +220,7 @@ export default function TransactionsPage() {
               <span className="text-xs text-muted-foreground">
                 {new Date(t.date).toLocaleDateString("pt-BR")}
               </span>
-              {getTypeBadge(type)}
+              {getTypeBadge(type, Number(t.amount))}
               {t.category && (
                 <Badge variant="outline" className="text-[10px] font-normal">{t.category}</Badge>
               )}
