@@ -101,22 +101,22 @@ Deno.serve(async (req) => {
   try {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
-      return new Response(JSON.stringify({ error: "Não autorizado" }), {
-        status: 401,
+      return new Response(JSON.stringify({ error: "Não autorizado (Falta authHeader)" }), {
+        status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const lovableApiKey = Deno.env.get("LOVABLE_API_KEY")!;
+    const geminiApiKey = Deno.env.get("GEMINI_API_KEY")!;
 
     // Verify caller is admin
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY") || Deno.env.get("SUPABASE_PUBLISHABLE_KEY");
     if (!supabaseUrl || !serviceRoleKey || !anonKey) {
       console.error("Missing env vars:", { url: !!supabaseUrl, srk: !!serviceRoleKey, anon: !!anonKey });
-      return new Response(JSON.stringify({ error: "Erro de configuração do servidor" }), {
-        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      return new Response(JSON.stringify({ error: "Erro de configuração do servidor local" }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
@@ -129,8 +129,8 @@ Deno.serve(async (req) => {
       data: { user: caller },
     } = await userClient.auth.getUser();
     if (!caller) {
-      return new Response(JSON.stringify({ error: "Não autorizado" }), {
-        status: 401,
+      return new Response(JSON.stringify({ error: "Token não autorizado" }), {
+        status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -147,8 +147,8 @@ Deno.serve(async (req) => {
       .maybeSingle();
 
     if (!roleData) {
-      return new Response(JSON.stringify({ error: "Acesso negado" }), {
-        status: 403,
+      return new Response(JSON.stringify({ error: "Acesso negado: Você não é admin na user_roles" }), {
+        status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -159,7 +159,7 @@ Deno.serve(async (req) => {
       return new Response(
         JSON.stringify({ error: "statement_id e file_path são obrigatórios" }),
         {
-          status: 400,
+          status: 200,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         }
       );
@@ -186,7 +186,7 @@ Deno.serve(async (req) => {
           error: "Erro ao baixar arquivo: " + (downloadError?.message || "arquivo não encontrado"),
         }),
         {
-          status: 400,
+          status: 200,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         }
       );
@@ -211,36 +211,19 @@ Deno.serve(async (req) => {
 
       // Use multimodal AI call for PDF
       const aiResponse = await fetch(
-        "https://ai.gateway.lovable.dev/v1/chat/completions",
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=${geminiApiKey}`,
         {
           method: "POST",
-          headers: {
-            Authorization: `Bearer ${lovableApiKey}`,
-            "Content-Type": "application/json",
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            model: "google/gemini-2.5-flash",
-            messages: [
-              {
-                role: "system",
-                content: SYSTEM_PROMPT,
-              },
-              {
-                role: "user",
-                content: [
-                  {
-                    type: "text",
-                    text: USER_MESSAGE,
-                  },
-                  {
-                    type: "image_url",
-                    image_url: {
-                      url: `data:application/pdf;base64,${base64}`,
-                    },
-                  },
-                ],
-              },
-            ],
+            systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+            contents: [{
+              role: "user",
+              parts: [
+                { text: USER_MESSAGE },
+                { inlineData: { mimeType: "application/pdf", data: base64 } }
+              ]
+            }]
           }),
         }
       );
@@ -256,27 +239,27 @@ Deno.serve(async (req) => {
         if (aiResponse.status === 429) {
           return new Response(
             JSON.stringify({ error: "Limite de requisições excedido. Tente novamente em alguns minutos." }),
-            { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
         if (aiResponse.status === 402) {
           return new Response(
             JSON.stringify({ error: "Créditos de IA insuficientes." }),
-            { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
 
         return new Response(
-          JSON.stringify({ error: "Erro ao processar com IA" }),
+          JSON.stringify({ error: `Erro ao processar com IA: ${errText}` }),
           {
-            status: 500,
+            status: 200,
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           }
         );
       }
 
       const aiData = await aiResponse.json();
-      const content = aiData.choices?.[0]?.message?.content || "";
+      const content = aiData.candidates?.[0]?.content?.parts?.[0]?.text || "";
 
       return await processAIResponse(
         content,
@@ -289,25 +272,18 @@ Deno.serve(async (req) => {
       fileContent = await fileData.text();
 
       const aiResponse = await fetch(
-        "https://ai.gateway.lovable.dev/v1/chat/completions",
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=${geminiApiKey}`,
         {
           method: "POST",
-          headers: {
-            Authorization: `Bearer ${lovableApiKey}`,
-            "Content-Type": "application/json",
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            model: "google/gemini-2.5-flash",
-            messages: [
-              {
-                role: "system",
-                content: SYSTEM_PROMPT,
-              },
-              {
-                role: "user",
-                content: `${USER_MESSAGE}\n\n${fileContent}`,
-              },
-            ],
+            systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+            contents: [{
+              role: "user",
+              parts: [
+                { text: `${USER_MESSAGE}\n\n${fileContent}` }
+              ]
+            }]
           }),
         }
       );
@@ -323,27 +299,27 @@ Deno.serve(async (req) => {
         if (aiResponse.status === 429) {
           return new Response(
             JSON.stringify({ error: "Limite de requisições excedido. Tente novamente em alguns minutos." }),
-            { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
         if (aiResponse.status === 402) {
           return new Response(
             JSON.stringify({ error: "Créditos de IA insuficientes." }),
-            { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
 
         return new Response(
-          JSON.stringify({ error: "Erro ao processar com IA" }),
+          JSON.stringify({ error: `Erro ao processar com IA: ${errText}` }),
           {
-            status: 500,
+            status: 200,
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           }
         );
       }
 
       const aiData = await aiResponse.json();
-      const content = aiData.choices?.[0]?.message?.content || "";
+      const content = aiData.candidates?.[0]?.content?.parts?.[0]?.text || "";
 
       return await processAIResponse(
         content,
@@ -355,9 +331,9 @@ Deno.serve(async (req) => {
   } catch (err) {
     console.error("parse-statement error:", err);
     return new Response(
-      JSON.stringify({ error: (err as Error).message || "Erro interno" }),
+      JSON.stringify({ error: `Erro interno no bloco principal: ${(err as Error).message || err}` }),
       {
-        status: 500,
+        status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       }
     );
@@ -400,7 +376,7 @@ async function processAIResponse(
           error: "Formato de resposta inválido da IA",
         }),
         {
-          status: 400,
+          status: 200,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         }
       );
@@ -416,7 +392,7 @@ async function processAIResponse(
           error: "Nenhum lançamento encontrado na fatura",
         }),
         {
-          status: 400,
+          status: 200,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         }
       );
@@ -461,6 +437,27 @@ async function processAIResponse(
       .delete()
       .eq("statement_id", statementId);
 
+    // Fetch known aliases for these descriptions
+    const uniqueDescriptions = [...new Set(transactions.map((t: any) => t.description).filter(Boolean))];
+    const { data: knownData, error: knownError } = await adminClient
+      .from("transactions")
+      .select("description, alias")
+      .in("description", uniqueDescriptions)
+      .not("alias", "is", null);
+
+    if (knownError) {
+      console.warn("Could not fetch known aliases:", knownError);
+    }
+
+    const aliasMap = new Map<string, string>();
+    if (knownData) {
+      for (const row of knownData) {
+        if (row.alias) {
+          aliasMap.set(row.description, row.alias);
+        }
+      }
+    }
+
     // Insert transactions
     const validTypes = ["purchase", "payment", "interest", "refund"];
     const transactionsToInsert = transactions.map((t: any) => {
@@ -473,6 +470,7 @@ async function processAIResponse(
         date: t.date,
         description: t.description,
         amount,
+        alias: aliasMap.get(t.description) || null,
         category: t.category || null,
         type: type === "refund" ? "purchase" : type, // store as purchase with negative amount
         is_reviewed: false,
@@ -494,7 +492,7 @@ async function processAIResponse(
           error: "Erro ao salvar transações: " + insertError.message,
         }),
         {
-          status: 500,
+          status: 200,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         }
       );
@@ -526,10 +524,10 @@ async function processAIResponse(
       .eq("id", statementId);
     return new Response(
       JSON.stringify({
-        error: "Erro ao interpretar resposta da IA",
+        error: `Erro ao interpretar resposta da IA: ${parseErr}`,
       }),
       {
-        status: 500,
+        status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       }
     );

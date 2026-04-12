@@ -1,17 +1,19 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Search, CheckCircle, Users, DollarSign, User, Plus, Trash2, CreditCard, AlertTriangle, Wallet, Scissors, Receipt } from "lucide-react";
-import { motion } from "framer-motion";
+import { Search, CheckCircle, Users, DollarSign, User, Plus, Trash2, CreditCard, AlertTriangle, Wallet, Scissors, Receipt, X, UserPlus } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
 import AssignTransactionDialog from "@/components/AssignTransactionDialog";
 import AddTransactionDialog from "@/components/AddTransactionDialog";
+import BulkAssignDialog from "@/components/BulkAssignDialog";
 
 const USER_COLORS = [
   { bg: "bg-violet-500/15", text: "text-violet-600", border: "border-violet-500/25", ring: "ring-violet-500/20" },
@@ -50,6 +52,10 @@ export default function TransactionsPage() {
   const [selectedStatement, setSelectedStatement] = useState<string>("");
   const [assignTx, setAssignTx] = useState<{ id: string; amount: number; description: string } | null>(null);
   const [showAddDialog, setShowAddDialog] = useState(false);
+  const [selectedTxIds, setSelectedTxIds] = useState<Set<string>>(new Set());
+  const [showBulkAssign, setShowBulkAssign] = useState(false);
+  const [editingAliasId, setEditingAliasId] = useState<string | null>(null);
+  const [aliasValue, setAliasValue] = useState("");
 
   const { data: statements } = useQuery({
     queryKey: ["statements-list"],
@@ -128,6 +134,33 @@ export default function TransactionsPage() {
     onError: () => toast.error("Erro ao remover lançamento"),
   });
 
+  const deleteBulkTx = useMutation({
+    mutationFn: async (ids: string[]) => {
+      await supabase.from("transaction_assignments").delete().in("transaction_id", ids);
+      const { error } = await supabase.from("transactions").delete().in("id", ids);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["transactions"] });
+      toast.success("Lançamentos removidos");
+      deselectAll();
+    },
+    onError: () => toast.error("Erro ao remover lançamentos"),
+  });
+
+  const updateAlias = useMutation({
+    mutationFn: async ({ id, alias }: { id: string; alias: string | null }) => {
+      const { error } = await supabase.from("transactions").update({ alias }).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["transactions"] });
+      setEditingAliasId(null);
+      toast.success("Apelido atualizado");
+    },
+    onError: () => toast.error("Erro ao atualizar apelido"),
+  });
+
   const profileMap = useMemo(() => {
     const map: Record<string, string> = {};
     for (const p of profiles ?? []) {
@@ -144,6 +177,52 @@ export default function TransactionsPage() {
     });
     return map;
   }, [profileMap]);
+
+  // Selectable transactions (only purchases with positive amounts)
+  const selectableTransactions = useMemo(() => {
+    if (!transactions) return [];
+    return transactions.filter((t: any) => {
+      const type = t.type || "purchase";
+      return type !== "payment" && Number(t.amount) > 0;
+    });
+  }, [transactions]);
+
+  const toggleTxSelection = useCallback((txId: string) => {
+    setSelectedTxIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(txId)) {
+        next.delete(txId);
+      } else {
+        next.add(txId);
+      }
+      return next;
+    });
+  }, []);
+
+  const selectAllVisible = useCallback(() => {
+    const ids = selectableTransactions.map((t: any) => t.id);
+    setSelectedTxIds(new Set(ids));
+  }, [selectableTransactions]);
+
+  const deselectAll = useCallback(() => {
+    setSelectedTxIds(new Set());
+  }, []);
+
+  const selectedTxData = useMemo(() => {
+    if (!transactions) return [];
+    return transactions
+      .filter((t: any) => selectedTxIds.has(t.id))
+      .map((t: any) => ({
+        id: t.id,
+        amount: Number(t.amount),
+        description: t.alias || t.description,
+      }));
+  }, [transactions, selectedTxIds]);
+
+  // Clear selection when statement changes
+  useEffect(() => {
+    setSelectedTxIds(new Set());
+  }, [selectedStatement]);
 
 
 
@@ -206,31 +285,46 @@ export default function TransactionsPage() {
   const renderMobileCard = (t: any, i: number) => {
     const hasAssignment = t.transaction_assignments && t.transaction_assignments.length > 0;
     const type = t.type || "purchase";
+    const isSelectable = type !== "payment" && Number(t.amount) > 0;
+    const isSelected = selectedTxIds.has(t.id);
     return (
       <motion.div
         key={t.id}
         initial={{ opacity: 0, y: 6 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: Math.min(i * 0.02, 0.4) }}
-        className="bg-card border border-border rounded-xl p-4 space-y-3 active:bg-muted/40 transition-colors"
+        className={`bg-card border rounded-xl p-4 space-y-3 active:bg-muted/40 transition-colors ${
+          isSelected ? "border-primary/50 bg-primary/5 ring-1 ring-primary/20" : "border-border"
+        }`}
       >
-        {/* Row 1: Description + Amount */}
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex-1 min-w-0">
-            <p className="font-medium text-sm leading-tight truncate">{t.description}</p>
-            <div className="flex items-center gap-2 mt-1.5">
-              <span className="text-xs text-muted-foreground">
-                {new Date(t.date).toLocaleDateString("pt-BR")}
-              </span>
-              {getTypeBadge(type, Number(t.amount))}
-              {t.category && (
-                <Badge variant="outline" className="text-[10px] font-normal">{t.category}</Badge>
-              )}
+        {/* Row 1: Checkbox + Description + Amount */}
+        <div className="flex items-start gap-3">
+          {isSelectable && (
+            <div className="pt-0.5 shrink-0">
+              <Checkbox
+                checked={isSelected}
+                onCheckedChange={() => toggleTxSelection(t.id)}
+                className="h-5 w-5"
+              />
             </div>
+          )}
+          <div className="flex-1 min-w-0 flex items-start justify-between gap-3">
+            <div className="flex-1 min-w-0">
+              <p className="font-medium text-sm leading-tight truncate">{t.description}</p>
+              <div className="flex items-center gap-2 mt-1.5">
+                <span className="text-xs text-muted-foreground">
+                  {new Date(t.date).toLocaleDateString("pt-BR")}
+                </span>
+                {getTypeBadge(type, Number(t.amount))}
+                {t.category && (
+                  <Badge variant="outline" className="text-[10px] font-normal">{t.category}</Badge>
+                )}
+              </div>
+            </div>
+            <p className={`text-base font-heading font-bold whitespace-nowrap ${type === "payment" || Number(t.amount) < 0 ? "text-green-600" : type === "interest" ? "text-destructive" : ""}`}>
+              {type === "payment" ? "- " : ""}{Number(t.amount) < 0 ? "- " : ""}R$ {Math.abs(Number(t.amount)).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+            </p>
           </div>
-          <p className={`text-base font-heading font-bold whitespace-nowrap ${type === "payment" || Number(t.amount) < 0 ? "text-green-600" : type === "interest" ? "text-destructive" : ""}`}>
-            {type === "payment" ? "- " : ""}{Number(t.amount) < 0 ? "- " : ""}R$ {Math.abs(Number(t.amount)).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-          </p>
         </div>
 
         {/* Row 2: Assignments */}
@@ -312,6 +406,9 @@ export default function TransactionsPage() {
     );
   };
 
+  const allSelectableSelected = selectableTransactions.length > 0 && selectableTransactions.every((t: any) => selectedTxIds.has(t.id));
+  const someSelected = selectedTxIds.size > 0;
+
   return (
     <div className="space-y-4 md:space-y-5">
       {/* Header */}
@@ -392,21 +489,7 @@ export default function TransactionsPage() {
                 </CardContent>
               </Card>
             </motion.div>
-            <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="min-w-[140px] md:min-w-0 flex-shrink-0 md:flex-shrink">
-              <Card className="shadow-card bg-green-500/5 border-green-500/20 h-full">
-                <CardContent className="p-3 md:p-4 flex items-center gap-2.5 md:gap-3">
-                  <div className="rounded-full bg-green-500/10 p-1.5 md:p-2 shrink-0">
-                    <Wallet className="w-4 h-4 md:w-5 md:h-5 text-green-600" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-[10px] md:text-xs text-muted-foreground truncate">Pagamentos</p>
-                    <p className="text-sm md:text-lg font-heading font-bold text-green-600">
-                      - R$ {formatBRL(summary.payments)}
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            </motion.div>
+
             {summary.interest > 0 && (
               <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }} className="min-w-[140px] md:min-w-0 flex-shrink-0 md:flex-shrink">
                 <Card className="shadow-card bg-destructive/5 border-destructive/20 h-full">
@@ -515,6 +598,30 @@ export default function TransactionsPage() {
         </Select>
       </div>
 
+      {/* Selection controls */}
+      {transactions && transactions.length > 0 && (
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs"
+            onClick={allSelectableSelected ? deselectAll : selectAllVisible}
+          >
+            <Checkbox
+              checked={allSelectableSelected}
+              className="mr-1.5 h-3.5 w-3.5"
+              onCheckedChange={allSelectableSelected ? deselectAll : selectAllVisible}
+            />
+            {allSelectableSelected ? "Desmarcar todas" : "Selecionar todas"}
+          </Button>
+          {someSelected && (
+            <span className="text-xs text-muted-foreground">
+              {selectedTxIds.size} {selectedTxIds.size === 1 ? "selecionada" : "selecionadas"}
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Mobile: Card-based transaction list */}
       <div className="md:hidden space-y-2.5">
         {isLoading ? (
@@ -537,8 +644,15 @@ export default function TransactionsPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border bg-muted/30">
+                  <th className="p-3 w-10">
+                    <Checkbox
+                      checked={allSelectableSelected && selectableTransactions.length > 0}
+                      onCheckedChange={allSelectableSelected ? deselectAll : selectAllVisible}
+                    />
+                  </th>
                   <th className="text-left p-3 font-medium text-muted-foreground whitespace-nowrap">Data</th>
                   <th className="text-left p-3 font-medium text-muted-foreground">Descrição</th>
+                  <th className="text-left p-3 font-medium text-muted-foreground">Apelido</th>
                   <th className="text-left p-3 font-medium text-muted-foreground whitespace-nowrap">Tipo</th>
                   <th className="text-left p-3 font-medium text-muted-foreground whitespace-nowrap">Categoria</th>
                   <th className="text-left p-3 font-medium text-muted-foreground whitespace-nowrap">Atribuído a</th>
@@ -549,29 +663,71 @@ export default function TransactionsPage() {
               <tbody>
                 {isLoading ? (
                   <tr>
-                    <td colSpan={7} className="p-8 text-center text-muted-foreground">Carregando...</td>
+                    <td colSpan={8} className="p-8 text-center text-muted-foreground">Carregando...</td>
                   </tr>
                 ) : transactions && transactions.length > 0 ? (
                   transactions.map((t: any, i: number) => {
                     const hasAssignment = t.transaction_assignments && t.transaction_assignments.length > 0;
+                    const type = t.type || "purchase";
+                    const isSelectable = type !== "payment" && Number(t.amount) > 0;
+                    const isSelected = selectedTxIds.has(t.id);
                     return (
                       <motion.tr
                         key={t.id}
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         transition={{ delay: Math.min(i * 0.01, 0.5) }}
-                        className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors group"
+                        className={`border-b border-border last:border-0 hover:bg-muted/30 transition-colors group ${
+                          isSelected ? "bg-primary/5" : ""
+                        }`}
                       >
+                        <td className="p-3 w-10">
+                          {isSelectable && (
+                            <Checkbox
+                              checked={isSelected}
+                              onCheckedChange={() => toggleTxSelection(t.id)}
+                            />
+                          )}
+                        </td>
                         <td className="p-3 whitespace-nowrap text-muted-foreground">
                           {new Date(t.date).toLocaleDateString("pt-BR")}
                         </td>
                         <td className="p-3">
-                          <div>
-                            <span className="font-medium">{t.description}</span>
-                            {t.alias && (
-                              <Badge variant="secondary" className="ml-2 text-[10px] px-1.5 py-0">{t.alias}</Badge>
-                            )}
-                          </div>
+                          <span className="font-medium">{t.description}</span>
+                        </td>
+                        <td className="p-3 max-w-[150px]">
+                          {editingAliasId === t.id ? (
+                            <div className="flex items-center gap-1">
+                               <Input
+                                  value={aliasValue}
+                                  onChange={(e) => setAliasValue(e.target.value)}
+                                  className="h-7 text-xs w-full px-2"
+                                  autoFocus
+                                  onKeyDown={(e) => {
+                                      if (e.key === "Enter") updateAlias.mutate({ id: t.id, alias: aliasValue.trim() || null });
+                                      if (e.key === "Escape") setEditingAliasId(null);
+                                  }}
+                               />
+                               <Button size="icon" variant="ghost" className="h-6 w-6 text-primary shrink-0" onClick={() => updateAlias.mutate({ id: t.id, alias: aliasValue.trim() || null })}>
+                                  <CheckCircle className="h-4 w-4" />
+                               </Button>
+                               <Button size="icon" variant="ghost" className="h-6 w-6 text-muted-foreground shrink-0" onClick={() => setEditingAliasId(null)}>
+                                  <X className="h-4 w-4" />
+                               </Button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center group/alias min-h-[28px]">
+                              <span className="text-muted-foreground truncate">{t.alias ? t.alias : <span className="opacity-40 italic">Sem apelido</span>}</span>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6 ml-2 opacity-0 group-hover/alias:opacity-100 transition-opacity shrink-0"
+                                onClick={() => { setEditingAliasId(t.id); setAliasValue(t.alias || ""); }}
+                              >
+                                <Plus className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          )}
                         </td>
                         <td className="p-3 whitespace-nowrap">
                           {getTypeBadge(t.type || "purchase", Number(t.amount))}
@@ -673,7 +829,7 @@ export default function TransactionsPage() {
                   })
                 ) : (
                   <tr>
-                    <td colSpan={7} className="p-8 text-center text-muted-foreground">
+                    <td colSpan={8} className="p-8 text-center text-muted-foreground">
                       {selectedStatement === "all"
                         ? "Selecione uma fatura para ver os lançamentos"
                         : "Nenhuma transação encontrada"}
@@ -686,10 +842,75 @@ export default function TransactionsPage() {
         </CardContent>
       </Card>
 
+      {/* Floating action bar for bulk selection */}
+      <AnimatePresence>
+        {someSelected && (
+          <motion.div
+            initial={{ opacity: 0, y: 40 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 40 }}
+            transition={{ type: "spring", damping: 25, stiffness: 300 }}
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50"
+          >
+            <div className="flex items-center gap-3 bg-primary text-primary-foreground rounded-2xl px-5 py-3 shadow-2xl border border-primary/20">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center text-sm font-bold">
+                  {selectedTxIds.size}
+                </div>
+                <span className="text-sm font-medium whitespace-nowrap">
+                  {selectedTxIds.size === 1 ? "transação selecionada" : "transações selecionadas"}
+                </span>
+              </div>
+              <div className="w-px h-6 bg-white/20" />
+              <Button
+                variant="secondary"
+                size="sm"
+                className="h-8 text-xs font-semibold"
+                onClick={() => setShowBulkAssign(true)}
+              >
+                <UserPlus className="w-3.5 h-3.5 mr-1.5" />
+                Atribuir Responsável
+              </Button>
+              {role === "admin" && (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  className="h-8 text-xs font-semibold"
+                  onClick={() => {
+                    if (confirm(`Remover ${selectedTxIds.size} lançamento(s)?`)) {
+                      deleteBulkTx.mutate(Array.from(selectedTxIds));
+                    }
+                  }}
+                  disabled={deleteBulkTx.isPending}
+                >
+                  <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+                  Excluir
+                </Button>
+              )}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-primary-foreground hover:bg-white/20"
+                onClick={deselectAll}
+              >
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <AssignTransactionDialog
         open={!!assignTx}
         onOpenChange={(open) => { if (!open) setAssignTx(null); }}
         transaction={assignTx}
+      />
+
+      <BulkAssignDialog
+        open={showBulkAssign}
+        onOpenChange={setShowBulkAssign}
+        transactions={selectedTxData}
+        onComplete={deselectAll}
       />
 
       {selectedStatement && selectedStatement !== "all" && (

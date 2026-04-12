@@ -8,6 +8,8 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
+import logoImg from "@/img/logo desenrola AI.png";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 interface NavItem {
   label: string;
@@ -38,16 +40,11 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
-      <div className="p-5 flex items-center gap-3">
-        <div className="w-9 h-9 rounded-lg gradient-primary flex items-center justify-center flex-shrink-0">
-          <CreditCard className="w-5 h-5 text-primary-foreground" />
-        </div>
-        <span className="font-heading font-bold text-lg text-sidebar-foreground">
-          CardManager
-        </span>
+      <div className="h-[120px] flex items-center justify-center">
+        <img src={logoImg} alt="Desenrola AI" className="w-[300px] h-auto max-w-none object-contain" />
       </div>
 
-      <nav className="flex-1 px-3 py-2 space-y-1">
+      <nav className="flex-1 px-3 py-1 space-y-1">
         {filteredItems.map((item) => {
           const active = location.pathname === item.href;
           return (
@@ -72,9 +69,16 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
       <div className="p-4 border-t border-sidebar-border">
         <div className="flex items-center gap-3 mb-3 px-2">
-          <div className="w-8 h-8 rounded-full gradient-primary flex items-center justify-center text-xs font-bold text-primary-foreground">
-            {profile?.full_name?.[0]?.toUpperCase() || "U"}
-          </div>
+          {profile?.avatar_url ? (
+            <Avatar className="w-8 h-8 border border-sidebar-border shadow-sm">
+              <AvatarImage src={profile.avatar_url} />
+              <AvatarFallback>{profile?.full_name?.[0]?.toUpperCase() || "U"}</AvatarFallback>
+            </Avatar>
+          ) : (
+            <div className="w-8 h-8 rounded-full gradient-primary flex items-center justify-center text-xs font-bold text-primary-foreground shadow-sm">
+              {profile?.full_name?.[0]?.toUpperCase() || "U"}
+            </div>
+          )}
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-sidebar-foreground truncate">
               {profile?.full_name || "Usuário"}
@@ -123,7 +127,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           <button onClick={() => setSidebarOpen(true)}>
             <Menu className="w-6 h-6 text-foreground" />
           </button>
-          <span className="font-heading font-bold text-foreground">CardManager</span>
+          <span className="font-heading font-bold text-foreground">Desenrola AI</span>
           <div className="w-6" />
         </header>
 
