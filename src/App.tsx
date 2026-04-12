@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
+import { HashRouter, Route, Routes, Navigate } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -15,6 +15,7 @@ import MonthlyExpensesPage from "./pages/MonthlyExpensesPage";
 import ExpenseSplitPage from "./pages/ExpenseSplitPage";
 import AliasesPage from "./pages/AliasesPage";
 import UsersPage from "./pages/UsersPage";
+import PaymentsPage from "./pages/PaymentsPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -56,7 +57,7 @@ const App = () => (
     <TooltipProvider>
       <Toaster />
       <Sonner />
-      <BrowserRouter>
+      <HashRouter>
         <AuthProvider>
           <Routes>
             <Route path="/login" element={<PublicRoute><LoginPage /></PublicRoute>} />
@@ -68,11 +69,12 @@ const App = () => (
             <Route path="/despesas" element={<ProtectedRoute><MonthlyExpensesPage /></ProtectedRoute>} />
             <Route path="/divisao" element={<ProtectedRoute><ExpenseSplitPage /></ProtectedRoute>} />
             <Route path="/apelidos" element={<ProtectedRoute><AliasesPage /></ProtectedRoute>} />
+            <Route path="/pagamentos" element={<ProtectedRoute><PaymentsPage /></ProtectedRoute>} />
             <Route path="/usuarios" element={<ProtectedRoute adminOnly><UsersPage /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </AuthProvider>
-      </BrowserRouter>
+      </HashRouter>
     </TooltipProvider>
   </QueryClientProvider>
 );

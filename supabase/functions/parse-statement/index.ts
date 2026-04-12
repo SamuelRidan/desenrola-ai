@@ -75,6 +75,7 @@ Responda APENAS com um JSON object válido (sem markdown, sem backticks):
   "saldo_anterior": <número com o SALDO FINANCIADO (fatura anterior - pagamento recebido), ou 0>,
   "fatura_anterior": <número com o valor da fatura anterior, ou 0>,
   "pagamento_anterior": <número com o pagamento recebido da fatura anterior, ou 0>,
+  "taxa_juros_mensal": <número com a taxa de juros mensal em percentual (ex: 14.90 para 14,90%), ou null se não encontrada>,
   "transactions": [
     {
       "date": "YYYY-MM-DD",
@@ -90,7 +91,21 @@ Categorias válidas: "Alimentação", "Transporte", "Compras", "Saúde", "Lazer"
 Tipos válidos: "purchase" (compras/débitos — valor positivo), "interest" (juros/IOF/multa/encargos — valor positivo), "refund" (estornos/devoluções — valor NEGATIVO)
 
 ATENÇÃO: NÃO use type "payment". Pagamentos da fatura anterior já estão refletidos no saldo_anterior.
-Se não souber a data exata de um lançamento, use o primeiro dia do mês da fatura.`;
+Se não souber a data exata de um lançamento, use o primeiro dia do mês da fatura.
+
+═══════════════════════════════════════
+EXTRAÇÃO DA TAXA DE JUROS
+═══════════════════════════════════════
+PROCURE no documento informações sobre a taxa de juros mensal cobrada pelo cartão. Estas geralmente aparecem em seções como:
+- "Encargos rotativos", "Taxa de juros", "CET mensal", "Taxa de financiamento"
+- "Juros remuneratórios", "Taxa mensal"
+- Exemplo: "Taxa de juros mensal: 14,90%" → retorne 14.90
+- Exemplo: "Taxa rotativo: 15,99% a.m." → retorne 15.99
+
+Se encontrar múltiplas taxas de juros (rotativo, parcelado, etc.), use a TAXA DO CRÉDITO ROTATIVO (maior taxa, geralmente).
+Se NÃO encontrar taxa de juros no documento, retorne null para taxa_juros_mensal.
+
+IMPORTANTE: O valor deve ser a taxa PERCENTUAL mensal (ex: 14.90 para 14,90% ao mês). NÃO converta para decimal.`;
 
 const USER_MESSAGE = "Extraia todos os lançamentos desta fatura de cartão de crédito. IMPORTANTE: (1) Use o SALDO FINANCIADO como saldo_anterior (fatura anterior - pagamento), NÃO o valor total da fatura anterior. (2) NÃO inclua pagamentos da fatura anterior nem créditos de rotativo como transações. (3) Inclua APENAS compras e juros/IOF individuais da lista de transações.";
 Deno.serve(async (req) => {
@@ -359,6 +374,7 @@ async function processAIResponse(
     let transactions: any[];
     let totalFatura: number | null = null;
     let saldoAnterior: number = 0;
+    let taxaJurosMensal: number | null = null;
 
     if (Array.isArray(parsed)) {
       transactions = parsed;
@@ -366,6 +382,7 @@ async function processAIResponse(
       transactions = parsed.transactions;
       totalFatura = parsed.total_fatura != null ? Number(parsed.total_fatura) : null;
       saldoAnterior = parsed.saldo_anterior != null ? Number(parsed.saldo_anterior) : 0;
+      taxaJurosMensal = parsed.taxa_juros_mensal != null ? Number(parsed.taxa_juros_mensal) : null;
     } else {
       await adminClient
         .from("statements")
@@ -504,12 +521,31 @@ async function processAIResponse(
       .update({ status: "completed", previous_balance: saldoAnterior, total_fatura: totalFatura || 0 })
       .eq("id", statementId);
 
+    // Update credit card interest rate if extracted from statement
+    if (taxaJurosMensal != null && taxaJurosMensal > 0) {
+      // Get the card_id from the statement
+      const { data: stmtData } = await adminClient
+        .from("statements")
+        .select("card_id")
+        .eq("id", statementId)
+        .single();
+
+      if (stmtData?.card_id) {
+        await adminClient
+          .from("credit_cards")
+          .update({ interest_rate: taxaJurosMensal })
+          .eq("id", stmtData.card_id);
+        console.log(`Updated interest_rate for card ${stmtData.card_id}: ${taxaJurosMensal}%`);
+      }
+    }
+
     return new Response(
       JSON.stringify({
         success: true,
         count: transactionsToInsert.length,
         total_fatura: totalFatura,
         previous_balance: saldoAnterior,
+        interest_rate: taxaJurosMensal,
         transactions: transactionsToInsert,
       }),
       {

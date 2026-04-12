@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Users, Scissors, User, Check, AlertTriangle } from "lucide-react";
+import { Users, Scissors, User, Check, AlertTriangle, UserX } from "lucide-react";
 
 const USER_COLORS = [
   { bg: "bg-violet-500/15", text: "text-violet-600", border: "border-violet-500/25", ring: "ring-violet-500/20" },
@@ -136,6 +136,11 @@ export default function AssignTransactionDialog({ open, onOpenChange, transactio
     setAmounts({ [userId]: String(transaction.amount.toFixed(2)) });
   };
 
+  const clearAll = () => {
+    setSelectedUsers([]);
+    setAmounts({});
+  };
+
   const saveMutation = useMutation({
     mutationFn: async () => {
       if (!transaction) return;
@@ -194,6 +199,23 @@ export default function AssignTransactionDialog({ open, onOpenChange, transactio
       <div className="space-y-2">
         <Label className="text-xs md:text-sm font-medium text-muted-foreground">Atribuir tudo a uma pessoa</Label>
         <div className="flex flex-wrap gap-2">
+          {/* Ninguém option */}
+          <button
+            onClick={clearAll}
+            className={`
+              inline-flex items-center gap-1.5 md:gap-2 rounded-full px-2.5 md:px-3 py-1.5 md:py-1.5 text-sm border transition-all active:scale-95
+              ${selectedUsers.length === 0
+                ? "bg-zinc-500/15 border-zinc-500/25 text-zinc-600 ring-2 ring-zinc-500/20"
+                : "border-border hover:border-primary/30 hover:bg-muted/50 active:bg-muted"
+              }
+            `}
+          >
+            <span className="w-6 h-6 rounded-full bg-zinc-500/15 text-zinc-600 flex items-center justify-center">
+              <UserX className="w-3.5 h-3.5" />
+            </span>
+            <span className="font-medium">Ninguém</span>
+            {selectedUsers.length === 0 && <Check className="w-3.5 h-3.5" />}
+          </button>
           {profiles?.map((p) => {
             const colors = userColorMap[p.user_id] || USER_COLORS[0];
             const isSelected = selectedUsers.length === 1 && selectedUsers[0] === p.user_id && isBalanced;

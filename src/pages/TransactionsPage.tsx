@@ -379,16 +379,7 @@ export default function TransactionsPage() {
             <Scissors className="w-3.5 h-3.5 mr-1.5 text-primary" />
             Dividir
           </Button>
-          {!t.is_reviewed && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-9 px-3 text-xs"
-              onClick={() => markReviewed.mutate(t.id)}
-            >
-              <CheckCircle className="w-3.5 h-3.5 text-success" />
-            </Button>
-          )}
+
           {role === "admin" && (
             <Button
               variant="ghost"
@@ -798,17 +789,7 @@ export default function TransactionsPage() {
                             >
                               <Scissors className="w-3.5 h-3.5 text-primary" />
                             </Button>
-                            {!t.is_reviewed && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-7 w-7"
-                                onClick={() => markReviewed.mutate(t.id)}
-                                title="Marcar como revisada"
-                              >
-                                <CheckCircle className="w-3.5 h-3.5 text-success" />
-                              </Button>
-                            )}
+
                             {role === "admin" && (
                               <Button
                                 variant="ghost"

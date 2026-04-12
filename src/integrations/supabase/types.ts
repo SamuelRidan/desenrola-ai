@@ -20,6 +20,7 @@ export type Database = {
           created_at: string
           created_by: string | null
           id: string
+          interest_rate: number
           last_four_digits: string
           name: string
           updated_at: string
@@ -29,6 +30,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           id?: string
+          interest_rate?: number
           last_four_digits: string
           name: string
           updated_at?: string
@@ -38,11 +40,53 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           id?: string
+          interest_rate?: number
           last_four_digits?: string
           name?: string
           updated_at?: string
         }
         Relationships: []
+      }
+      invoice_payments: {
+        Row: {
+          id: string
+          statement_id: string
+          amount_paid: number
+          payment_date: string | null
+          notes: string | null
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          statement_id: string
+          amount_paid: number
+          payment_date?: string | null
+          notes?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          statement_id?: string
+          amount_paid?: number
+          payment_date?: string | null
+          notes?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invoice_payments_statement_id_fkey"
+            columns: ["statement_id"]
+            isOneToOne: false
+            referencedRelation: "statements"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       profiles: {
         Row: {
