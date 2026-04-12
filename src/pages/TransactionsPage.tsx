@@ -311,7 +311,43 @@ export default function TransactionsPage() {
           <div className="flex-1 min-w-0 flex items-start justify-between gap-3">
             <div className="flex-1 min-w-0">
               <p className="font-medium text-sm leading-tight truncate">{t.description}</p>
-              <div className="flex items-center gap-2 mt-1.5">
+              
+              <div className="mt-1">
+                {editingAliasId === t.id ? (
+                  <div className="flex items-center gap-1">
+                     <Input
+                        value={aliasValue}
+                        onChange={(e) => setAliasValue(e.target.value)}
+                        className="h-7 text-xs w-full px-2"
+                        autoFocus
+                        onKeyDown={(e) => {
+                            if (e.key === "Enter") updateAlias.mutate({ id: t.id, alias: aliasValue.trim() || null });
+                            if (e.key === "Escape") setEditingAliasId(null);
+                        }}
+                     />
+                     <Button size="icon" variant="ghost" className="h-6 w-6 text-primary shrink-0" onClick={() => updateAlias.mutate({ id: t.id, alias: aliasValue.trim() || null })}>
+                        <CheckCircle className="h-4 w-4" />
+                     </Button>
+                     <Button size="icon" variant="ghost" className="h-6 w-6 text-muted-foreground shrink-0" onClick={() => setEditingAliasId(null)}>
+                        <X className="h-4 w-4" />
+                     </Button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1 group/alias-mobile">
+                    <span className="text-xs text-muted-foreground truncate">{t.alias ? t.alias : <span className="opacity-40 italic">Sem apelido</span>}</span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-5 w-5 ml-1 shrink-0 bg-muted/30"
+                      onClick={() => { setEditingAliasId(t.id); setAliasValue(t.alias || ""); }}
+                    >
+                      <Plus className="h-2.5 w-2.5" />
+                    </Button>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 mt-1.5">
                 <span className="text-xs text-muted-foreground">
                   {new Date(t.date).toLocaleDateString("pt-BR")}
                 </span>
