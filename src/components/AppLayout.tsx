@@ -122,9 +122,9 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       )}
 
       {/* Main Content */}
-      <div className="flex-1 lg:ml-64">
+      <div className="flex-1 flex flex-col min-w-0 lg:ml-64 h-screen overflow-y-auto">
         {/* Mobile Header */}
-        <header className="lg:hidden flex items-center justify-between p-4 border-b border-border bg-card">
+        <header className="lg:hidden flex-none flex items-center justify-between p-4 border-b border-border bg-card">
           <button onClick={() => setSidebarOpen(true)}>
             <Menu className="w-6 h-6 text-foreground" />
           </button>
@@ -132,7 +132,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           <div className="w-6" />
         </header>
 
-        <main className="p-4 md:p-6 lg:p-8 animate-fade-in">
+        <main className="flex-1 p-4 md:p-6 lg:p-8 animate-fade-in w-full max-w-[100vw] overflow-x-hidden">
           {children}
         </main>
       </div>

@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
@@ -6,9 +6,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Search, CheckCircle, Users, DollarSign, User, Plus, Trash2, CreditCard, AlertTriangle, Wallet, Scissors, Receipt, X, UserPlus } from "lucide-react";
+import { Search, CheckCircle, Users, DollarSign, User, Plus, CreditCard, AlertTriangle, Wallet, Scissors, Receipt, X, UserPlus, Calendar, ChevronLeft, ChevronRight, Layers } from "lucide-react";
+
+const MONTH_NAMES = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+const MONTH_NAMES_FULL = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
 import AssignTransactionDialog from "@/components/AssignTransactionDialog";
@@ -121,32 +123,7 @@ export default function TransactionsPage() {
     },
   });
 
-  const deleteTx = useMutation({
-    mutationFn: async (id: string) => {
-      await supabase.from("transaction_assignments").delete().eq("transaction_id", id);
-      const { error } = await supabase.from("transactions").delete().eq("id", id);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["transactions"] });
-      toast.success("Lançamento removido");
-    },
-    onError: () => toast.error("Erro ao remover lançamento"),
-  });
 
-  const deleteBulkTx = useMutation({
-    mutationFn: async (ids: string[]) => {
-      await supabase.from("transaction_assignments").delete().in("transaction_id", ids);
-      const { error } = await supabase.from("transactions").delete().in("id", ids);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["transactions"] });
-      toast.success("Lançamentos removidos");
-      deselectAll();
-    },
-    onError: () => toast.error("Erro ao remover lançamentos"),
-  });
 
   const updateAlias = useMutation({
     mutationFn: async ({ id, alias }: { id: string; alias: string | null }) => {
@@ -416,18 +393,7 @@ export default function TransactionsPage() {
             Dividir
           </Button>
 
-          {role === "admin" && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-9 px-3 text-xs"
-              onClick={() => {
-                if (confirm("Remover este lançamento?")) deleteTx.mutate(t.id);
-              }}
-            >
-              <Trash2 className="w-3.5 h-3.5 text-destructive" />
-            </Button>
-          )}
+
         </div>
       </motion.div>
     );
@@ -604,25 +570,129 @@ export default function TransactionsPage() {
         </div>
       )}
 
-      {/* Filters */}
-      <div className="flex flex-col gap-2.5 sm:flex-row sm:gap-3">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input placeholder="Buscar por descrição..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9 h-10 md:h-9" />
+      {/* Statement Carousel Selector */}
+      {statements && statements.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-muted-foreground" />
+              <p className="text-sm font-medium text-muted-foreground">Selecione a fatura</p>
+            </div>
+            <div className="hidden md:flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 rounded-full"
+                onClick={() => {
+                  const el = document.getElementById('statement-carousel');
+                  if (el) el.scrollBy({ left: -200, behavior: 'smooth' });
+                }}
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 rounded-full"
+                onClick={() => {
+                  const el = document.getElementById('statement-carousel');
+                  if (el) el.scrollBy({ left: 200, behavior: 'smooth' });
+                }}
+              >
+                <ChevronRight className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+          <div
+            id="statement-carousel"
+            className="flex gap-2.5 overflow-x-auto pb-2 scrollbar-hide -mx-4 px-4 md:mx-0 md:px-0 snap-x snap-mandatory"
+          >
+            {/* "Todas" card */}
+            <motion.button
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              whileTap={{ scale: 0.97 }}
+              onClick={() => setSelectedStatement("all")}
+              className={`relative flex-shrink-0 snap-start rounded-xl border-2 p-3 md:p-3.5 min-w-[130px] md:min-w-[150px] text-left transition-all duration-200 ${
+                effectiveStatement === "all"
+                  ? "border-primary bg-primary/10 shadow-md ring-1 ring-primary/20"
+                  : "border-border bg-card hover:border-muted-foreground/30 hover:bg-muted/40"
+              }`}
+            >
+              <div className={`w-8 h-8 rounded-lg flex items-center justify-center mb-2 ${
+                effectiveStatement === "all" ? "bg-primary/15" : "bg-muted"
+              }`}>
+                <Layers className={`w-4 h-4 ${effectiveStatement === "all" ? "text-primary" : "text-muted-foreground"}`} />
+              </div>
+              <p className={`text-base md:text-lg font-bold truncate ${
+                effectiveStatement === "all" ? "text-primary" : "text-foreground"
+              }`}>Todas</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Todas as faturas</p>
+              {effectiveStatement === "all" && (
+                <motion.div
+                  layoutId="statement-indicator"
+                  className="absolute bottom-0 left-2 right-2 h-0.5 rounded-full bg-primary"
+                />
+              )}
+            </motion.button>
+
+            {/* Statement cards */}
+            {[...statements]
+              .sort((a: any, b: any) => {
+                if (a.year !== b.year) return b.year - a.year;
+                return b.month - a.month;
+              })
+              .map((s: any, i: number) => {
+                const isSelected = selectedStatement === s.id;
+                const monthIdx = (s.month || 1) - 1;
+                return (
+                  <motion.button
+                    key={s.id}
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ delay: Math.min(i * 0.03, 0.3) }}
+                    whileTap={{ scale: 0.97 }}
+                    onClick={() => setSelectedStatement(s.id)}
+                    className={`relative flex-shrink-0 snap-start rounded-xl border-2 p-3 md:p-3.5 min-w-[140px] md:min-w-[160px] text-left transition-all duration-200 ${
+                      isSelected
+                        ? "border-primary bg-primary/10 shadow-md ring-1 ring-primary/20"
+                        : "border-border bg-card hover:border-muted-foreground/30 hover:bg-muted/40"
+                    }`}
+                  >
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center mb-2 ${
+                      isSelected ? "gradient-primary" : "bg-muted"
+                    }`}>
+                      <CreditCard className={`w-4 h-4 ${
+                        isSelected ? "text-white" : "text-muted-foreground"
+                      }`} />
+                    </div>
+                    <p className={`text-base md:text-lg font-bold truncate ${
+                      isSelected ? "text-primary" : "text-foreground"
+                    }`}>
+                      {s.credit_cards?.name}
+                    </p>
+                    <p className={`text-xs mt-0.5 truncate ${
+                      isSelected ? "text-primary/70 font-medium" : "text-muted-foreground"
+                    }`}>
+                      {MONTH_NAMES_FULL[monthIdx]} · {s.year}
+                    </p>
+                    {isSelected && (
+                      <motion.div
+                        layoutId="statement-indicator"
+                        className="absolute bottom-0 left-2 right-2 h-0.5 rounded-full bg-primary"
+                      />
+                    )}
+                  </motion.button>
+                );
+              })}
+          </div>
         </div>
-        <Select value={selectedStatement} onValueChange={setSelectedStatement}>
-          <SelectTrigger className="w-full sm:w-72 h-10 md:h-9">
-            <SelectValue placeholder="Todas as faturas" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todas as faturas</SelectItem>
-            {statements?.map((s: any) => (
-              <SelectItem key={s.id} value={s.id}>
-                {s.credit_cards?.name} — {String(s.month).padStart(2, "0")}/{s.year}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      )}
+
+      {/* Search Filter */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+        <Input placeholder="Buscar por descrição..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9 h-10 md:h-9" />
       </div>
 
       {/* Selection controls */}
@@ -826,19 +896,7 @@ export default function TransactionsPage() {
                               <Scissors className="w-3.5 h-3.5 text-primary" />
                             </Button>
 
-                            {role === "admin" && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-7 w-7"
-                                onClick={() => {
-                                  if (confirm("Remover este lançamento?")) deleteTx.mutate(t.id);
-                                }}
-                                title="Remover"
-                              >
-                                <Trash2 className="w-3.5 h-3.5 text-destructive" />
-                              </Button>
-                            )}
+
                           </div>
                         </td>
                       </motion.tr>
@@ -888,22 +946,7 @@ export default function TransactionsPage() {
                 <UserPlus className="w-3.5 h-3.5 mr-1.5" />
                 Atribuir Responsável
               </Button>
-              {role === "admin" && (
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  className="h-8 text-xs font-semibold"
-                  onClick={() => {
-                    if (confirm(`Remover ${selectedTxIds.size} lançamento(s)?`)) {
-                      deleteBulkTx.mutate(Array.from(selectedTxIds));
-                    }
-                  }}
-                  disabled={deleteBulkTx.isPending}
-                >
-                  <Trash2 className="w-3.5 h-3.5 mr-1.5" />
-                  Excluir
-                </Button>
-              )}
+
               <Button
                 variant="ghost"
                 size="icon"

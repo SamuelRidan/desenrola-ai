@@ -1,6 +1,5 @@
 import { useAuth } from "@/contexts/AuthContext";
 import AdminDashboard from "./AdminDashboard";
-import UserDashboard from "./UserDashboard";
 import { Navigate } from "react-router-dom";
 
 export default function Index() {
@@ -16,5 +15,8 @@ export default function Index() {
 
   if (!session) return <Navigate to="/login" replace />;
 
-  return role === "admin" ? <AdminDashboard /> : <UserDashboard />;
+  // Regular users go directly to the transactions page
+  if (role !== "admin") return <Navigate to="/transacoes" replace />;
+
+  return <AdminDashboard />;
 }
