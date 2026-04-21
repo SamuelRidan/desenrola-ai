@@ -28,6 +28,24 @@ IMPORTANTE SOBRE O SALDO ANTERIOR:
 - Se não houver saldo anterior ou fatura anterior, use 0.
 
 ═══════════════════════════════════════
+IDENTIFICAÇÃO DO RESPONSÁVEL (TITULAR/DEPENDENTE)
+═══════════════════════════════════════
+Faturas de cartão de crédito brasileiro frequentemente agrupam as transações por RESPONSÁVEL (titular e dependentes/adicionais).
+Cada seção de responsável geralmente aparece como um cabeçalho no formato:
+- "1 - NOME COMPLETO" ou "NOME COMPLETO" antes das transações daquela pessoa
+- "2 - NOME DEPENDENTE"
+- "3 - OUTRO DEPENDENTE"
+- Ou variações como "Titular: NOME", "Dependente: NOME", "Cartão adicional: NOME"
+
+REGRAS PARA CAPTURA DO RESPONSÁVEL:
+1. Identifique os CABEÇALHOS que agrupam transações por pessoa.
+2. Para CADA transação, atribua o campo "card_holder" com o NOME DO RESPONSÁVEL sob o qual a transação aparece.
+3. Use APENAS o nome da pessoa, SEM o número de prefixo. Exemplo: se o cabeçalho é "1 - SAMUEL SOUZA RIDAN", use "SAMUEL SOUZA RIDAN".
+4. Se a fatura NÃO tiver agrupamento por responsável (todas as transações sob um único titular), use null para card_holder.
+5. Se aparecerem categorias ("Restaurantes", "Supermercados", "Saúde", etc.) dentro de uma seção de responsável, mantenha o responsável daquela seção, a categoria é apenas um sub-agrupamento.
+6. NÃO confunda nomes de categorias ("Alimentação", "Lazer", "Serviços") com nomes de responsáveis.
+
+═══════════════════════════════════════
 REGRAS DE EXTRAÇÃO DE TRANSAÇÕES
 ═══════════════════════════════════════
 EXTRAIA APENAS transações que aparecem na LISTA DE TRANSAÇÕES/LANÇAMENTOS:
@@ -82,7 +100,8 @@ Responda APENAS com um JSON object válido (sem markdown, sem backticks):
       "description": "<descrição ORIGINAL como aparece na fatura>",
       "amount": <valor numérico — positivo para compras/juros, NEGATIVO para estornos/devoluções>,
       "category": "<categoria>",
-      "type": "<tipo>"
+      "type": "<tipo>",
+      "card_holder": "<NOME DO RESPONSÁVEL que aparece como cabeçalho da seção, ou null se não houver agrupamento>"
     }
   ]
 }
@@ -491,6 +510,7 @@ async function processAIResponse(
         category: t.category || null,
         type: type === "refund" ? "purchase" : type, // store as purchase with negative amount
         is_reviewed: false,
+        card_holder: t.card_holder || null,
       };
     });
 

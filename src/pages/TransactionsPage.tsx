@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { Search, CheckCircle, Users, DollarSign, User, Plus, CreditCard, AlertTriangle, Wallet, Scissors, Receipt, X, UserPlus, Calendar, ChevronLeft, ChevronRight, Layers } from "lucide-react";
+import { Search, CheckCircle, Users, DollarSign, User, Plus, CreditCard, AlertTriangle, Wallet, Scissors, Receipt, X, UserPlus, Calendar, ChevronLeft, ChevronRight, Layers, UserCircle } from "lucide-react";
 
 const MONTH_NAMES = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 const MONTH_NAMES_FULL = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
@@ -52,6 +52,8 @@ export default function TransactionsPage() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [selectedStatement, setSelectedStatement] = useState<string>("");
+  const [selectedCardHolder, setSelectedCardHolder] = useState<string>("all");
+  const [selectedAssignedUser, setSelectedAssignedUser] = useState<string>("all");
   const [assignTx, setAssignTx] = useState<{ id: string; amount: number; description: string } | null>(null);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [selectedTxIds, setSelectedTxIds] = useState<Set<string>>(new Set());
@@ -83,7 +85,7 @@ export default function TransactionsPage() {
 
   const effectiveStatement = selectedStatement || "all";
 
-  const { data: transactions, isLoading } = useQuery({
+  const { data: rawTransactions, isLoading } = useQuery({
      queryKey: ["transactions", effectiveStatement, search],
     queryFn: async () => {
       let query = supabase
@@ -103,6 +105,22 @@ export default function TransactionsPage() {
       return data ?? [];
     },
   });
+
+  // Extract unique card holders from raw transactions
+  const cardHolders = useMemo(() => {
+    if (!rawTransactions) return [];
+    const holders = new Set<string>();
+    for (const t of rawTransactions) {
+      if (t.card_holder) holders.add(t.card_holder);
+    }
+    return Array.from(holders).sort();
+  }, [rawTransactions]);
+
+  // Reset filters when statement changes
+  useEffect(() => {
+    setSelectedCardHolder("all");
+    setSelectedAssignedUser("all");
+  }, [selectedStatement]);
 
   const { data: profiles } = useQuery({
     queryKey: ["all-profiles"],
@@ -154,6 +172,60 @@ export default function TransactionsPage() {
     });
     return map;
   }, [profileMap]);
+
+  // Extract unique assigned users from raw transactions
+  const assignedUsers = useMemo(() => {
+    if (!rawTransactions || !profileMap) return [];
+    const users = new Set<string>();
+    for (const t of rawTransactions) {
+      if (t.transaction_assignments && t.transaction_assignments.length > 0) {
+        for (const a of t.transaction_assignments) {
+          users.add(a.user_id);
+        }
+      }
+    }
+    return Array.from(users).map(uid => ({
+      id: uid,
+      name: profileMap[uid] || "Desconhecido",
+    })).sort((a, b) => a.name.localeCompare(b.name));
+  }, [rawTransactions, profileMap]);
+
+  // Apply filters and sorting
+  const transactions = useMemo(() => {
+    if (!rawTransactions) return rawTransactions;
+    
+    let filtered = rawTransactions;
+    
+    // Filter by Card Holder
+    if (selectedCardHolder !== "all") {
+      filtered = filtered.filter((t: any) => t.card_holder === selectedCardHolder);
+    }
+    
+    // Filter by Assigned User 
+    if (selectedAssignedUser === "unassigned") {
+      filtered = filtered.filter((t: any) => !t.transaction_assignments || t.transaction_assignments.length === 0);
+    } else if (selectedAssignedUser !== "all") {
+      filtered = filtered.filter((t: any) => 
+        t.transaction_assignments && t.transaction_assignments.some((a: any) => a.user_id === selectedAssignedUser)
+      );
+    }
+
+    // Sort by card_holder (Responsável) and then assigned user (Atribuído a)
+    return [...filtered].sort((a: any, b: any) => {
+      // 1. Sort by card_holder
+      const holderA = a.card_holder || "ZZZZ"; 
+      const holderB = b.card_holder || "ZZZZ";
+      const holderDiff = holderA.localeCompare(holderB);
+      if (holderDiff !== 0) return holderDiff;
+
+      // 2. Sort by assigned user
+      const idA = a.transaction_assignments && a.transaction_assignments.length > 0 ? a.transaction_assignments[0].user_id : "ZZZZ";
+      const idB = b.transaction_assignments && b.transaction_assignments.length > 0 ? b.transaction_assignments[0].user_id : "ZZZZ";
+      const assignedA = profileMap[idA] || idA;
+      const assignedB = profileMap[idB] || idB;
+      return assignedA.localeCompare(assignedB);
+    });
+  }, [rawTransactions, selectedCardHolder, selectedAssignedUser, profileMap]);
 
   // Selectable transactions (only purchases with positive amounts)
   const selectableTransactions = useMemo(() => {
@@ -288,6 +360,12 @@ export default function TransactionsPage() {
           <div className="flex-1 min-w-0 flex items-start justify-between gap-3">
             <div className="flex-1 min-w-0">
               <p className="font-medium text-sm leading-tight truncate">{t.description}</p>
+              {t.card_holder && (
+                <div className="flex items-center gap-1 mt-0.5">
+                  <UserCircle className="w-3 h-3 text-muted-foreground shrink-0" />
+                  <span className="text-[11px] text-muted-foreground font-medium truncate">{t.card_holder}</span>
+                </div>
+              )}
               
               <div className="mt-1">
                 {editingAliasId === t.id ? (
@@ -689,6 +767,145 @@ export default function TransactionsPage() {
         </div>
       )}
 
+      {/* Card Holder Filter */}
+      {cardHolders.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <UserCircle className="w-4 h-4 text-muted-foreground" />
+            <p className="text-sm font-medium text-muted-foreground">Responsável</p>
+          </div>
+          <div className="flex gap-2 overflow-x-auto pb-1.5 scrollbar-hide -mx-4 px-4 md:mx-0 md:px-0">
+            <motion.button
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              whileTap={{ scale: 0.97 }}
+              onClick={() => setSelectedCardHolder("all")}
+              className={`flex-shrink-0 inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium border-2 transition-all duration-200 ${
+                selectedCardHolder === "all"
+                  ? "border-primary bg-primary/10 text-primary shadow-sm ring-1 ring-primary/20"
+                  : "border-border bg-card text-muted-foreground hover:border-muted-foreground/30 hover:bg-muted/40"
+              }`}
+            >
+              <Users className="w-3.5 h-3.5" />
+              Todos
+            </motion.button>
+            {cardHolders.map((holder, idx) => {
+              const colors = USER_COLORS[idx % USER_COLORS.length];
+              const isSelected = selectedCardHolder === holder;
+              const holderCount = rawTransactions?.filter((t: any) => t.card_holder === holder).length || 0;
+              return (
+                <motion.button
+                  key={holder}
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ delay: Math.min(idx * 0.03, 0.15) }}
+                  whileTap={{ scale: 0.97 }}
+                  onClick={() => setSelectedCardHolder(isSelected ? "all" : holder)}
+                  className={`flex-shrink-0 inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-sm font-medium border-2 transition-all duration-200 ${
+                    isSelected
+                      ? `${colors.border} ${colors.bg} ${colors.text} shadow-sm ring-1 ${colors.ring}`
+                      : "border-border bg-card text-foreground hover:border-muted-foreground/30 hover:bg-muted/40"
+                  }`}
+                >
+                  <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                    isSelected ? `${colors.bg} ${colors.text}` : "bg-muted text-muted-foreground"
+                  }`}>
+                    {getInitials(holder)}
+                  </span>
+                  <span className="whitespace-nowrap">
+                    {holder.split(" ").slice(0, 2).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(" ")}
+                  </span>
+                  <span className={`text-xs px-1.5 py-0.5 rounded-full ${
+                    isSelected ? `${colors.bg} ${colors.text}` : "bg-muted text-muted-foreground"
+                  }`}>
+                    {holderCount}
+                  </span>
+                </motion.button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Assigned User Filter */}
+      {(assignedUsers.length > 0 || rawTransactions?.some((t: any) => !t.transaction_assignments || t.transaction_assignments.length === 0)) && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <User className="w-4 h-4 text-muted-foreground" />
+            <p className="text-sm font-medium text-muted-foreground">Atribuído a</p>
+          </div>
+          <div className="flex gap-2 overflow-x-auto pb-1.5 scrollbar-hide -mx-4 px-4 md:mx-0 md:px-0">
+            <motion.button
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              whileTap={{ scale: 0.97 }}
+              onClick={() => setSelectedAssignedUser("all")}
+              className={`flex-shrink-0 inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium border-2 transition-all duration-200 ${
+                selectedAssignedUser === "all"
+                  ? "border-primary bg-primary/10 text-primary shadow-sm ring-1 ring-primary/20"
+                  : "border-border bg-card text-muted-foreground hover:border-muted-foreground/30 hover:bg-muted/40"
+              }`}
+            >
+              <Users className="w-3.5 h-3.5" />
+              Todos
+            </motion.button>
+            
+            {/* Unassigned Option */}
+            {rawTransactions?.some((t: any) => !t.transaction_assignments || t.transaction_assignments.length === 0) && (
+              <motion.button
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                whileTap={{ scale: 0.97 }}
+                onClick={() => setSelectedAssignedUser(selectedAssignedUser === "unassigned" ? "all" : "unassigned")}
+                className={`flex-shrink-0 inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium border-2 transition-all duration-200 ${
+                  selectedAssignedUser === "unassigned"
+                    ? "border-warning bg-warning/10 text-warning shadow-sm ring-1 ring-warning/20"
+                    : "border-border bg-card text-muted-foreground hover:border-muted-foreground/30 hover:bg-muted/40"
+                }`}
+              >
+                <AlertTriangle className="w-3.5 h-3.5" />
+                Sem atribuição
+              </motion.button>
+            )}
+
+            {assignedUsers.map((user, idx) => {
+              const colors = userColorMap[user.id] || USER_COLORS[idx % USER_COLORS.length];
+              const isSelected = selectedAssignedUser === user.id;
+              const userCount = rawTransactions?.filter((t: any) => t.transaction_assignments?.some((a: any) => a.user_id === user.id)).length || 0;
+              return (
+                <motion.button
+                  key={user.id}
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ delay: Math.min(idx * 0.03, 0.15) }}
+                  whileTap={{ scale: 0.97 }}
+                  onClick={() => setSelectedAssignedUser(isSelected ? "all" : user.id)}
+                  className={`flex-shrink-0 inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-sm font-medium border-2 transition-all duration-200 ${
+                    isSelected
+                      ? `${colors.border} ${colors.bg} ${colors.text} shadow-sm ring-1 ${colors.ring}`
+                      : "border-border bg-card text-foreground hover:border-muted-foreground/30 hover:bg-muted/40"
+                  }`}
+                >
+                  <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                    isSelected ? `${colors.bg} ${colors.text}` : "bg-muted text-muted-foreground"
+                  }`}>
+                    {getInitials(user.name)}
+                  </span>
+                  <span className="whitespace-nowrap">
+                    {user.name.split(" ").slice(0, 2).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(" ")}
+                  </span>
+                  <span className={`text-xs px-1.5 py-0.5 rounded-full ${
+                    isSelected ? `${colors.bg} ${colors.text}` : "bg-muted text-muted-foreground"
+                  }`}>
+                    {userCount}
+                  </span>
+                </motion.button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Search Filter */}
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -750,6 +967,7 @@ export default function TransactionsPage() {
                   <th className="text-left p-3 font-medium text-muted-foreground whitespace-nowrap">Data</th>
                   <th className="text-left p-3 font-medium text-muted-foreground">Descrição</th>
                   <th className="text-left p-3 font-medium text-muted-foreground">Apelido</th>
+                  <th className="text-left p-3 font-medium text-muted-foreground whitespace-nowrap">Responsável</th>
                   <th className="text-left p-3 font-medium text-muted-foreground whitespace-nowrap">Tipo</th>
                   <th className="text-left p-3 font-medium text-muted-foreground whitespace-nowrap">Categoria</th>
                   <th className="text-left p-3 font-medium text-muted-foreground whitespace-nowrap">Atribuído a</th>
@@ -760,7 +978,7 @@ export default function TransactionsPage() {
               <tbody>
                 {isLoading ? (
                   <tr>
-                    <td colSpan={8} className="p-8 text-center text-muted-foreground">Carregando...</td>
+                    <td colSpan={10} className="p-8 text-center text-muted-foreground">Carregando...</td>
                   </tr>
                 ) : transactions && transactions.length > 0 ? (
                   transactions.map((t: any, i: number) => {
@@ -824,6 +1042,26 @@ export default function TransactionsPage() {
                                 <Plus className="h-3 w-3" />
                               </Button>
                             </div>
+                          )}
+                        </td>
+                        <td className="p-3 whitespace-nowrap">
+                          {t.card_holder ? (
+                            <div className="flex items-center gap-1.5">
+                              <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                                (() => {
+                                  const holderIdx = cardHolders.indexOf(t.card_holder);
+                                  const colors = USER_COLORS[holderIdx >= 0 ? holderIdx % USER_COLORS.length : 0];
+                                  return `${colors.bg} ${colors.text}`;
+                                })()
+                              }`}>
+                                {getInitials(t.card_holder)}
+                              </span>
+                              <span className="text-xs font-medium truncate max-w-[120px]">
+                                {t.card_holder.split(" ").slice(0, 2).map((w: string) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(" ")}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
                           )}
                         </td>
                         <td className="p-3 whitespace-nowrap">
@@ -904,7 +1142,7 @@ export default function TransactionsPage() {
                   })
                 ) : (
                   <tr>
-                    <td colSpan={8} className="p-8 text-center text-muted-foreground">
+                    <td colSpan={10} className="p-8 text-center text-muted-foreground">
                       {selectedStatement === "all"
                         ? "Selecione uma fatura para ver os lançamentos"
                         : "Nenhuma transação encontrada"}

@@ -225,6 +225,7 @@ export type Database = {
         Row: {
           alias: string | null
           amount: number
+          card_holder: string | null
           category: string | null
           created_at: string
           date: string
@@ -238,6 +239,7 @@ export type Database = {
         Insert: {
           alias?: string | null
           amount: number
+          card_holder?: string | null
           category?: string | null
           created_at?: string
           date: string
@@ -251,6 +253,7 @@ export type Database = {
         Update: {
           alias?: string | null
           amount?: number
+          card_holder?: string | null
           category?: string | null
           created_at?: string
           date?: string
