@@ -359,7 +359,7 @@ export default function TransactionsPage() {
           )}
           <div className="flex-1 min-w-0 flex items-start justify-between gap-3">
             <div className="flex-1 min-w-0">
-              <p className="font-medium text-sm leading-tight truncate">{t.description}</p>
+              <p className="font-medium text-sm leading-tight break-words pr-1">{t.description}</p>
               {t.card_holder && (
                 <div className="flex items-center gap-1 mt-0.5">
                   <UserCircle className="w-3 h-3 text-muted-foreground shrink-0" />
@@ -1163,36 +1163,39 @@ export default function TransactionsPage() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 40 }}
             transition={{ type: "spring", damping: 25, stiffness: 300 }}
-            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50"
+            className="fixed bottom-6 left-0 w-full px-4 z-50 flex justify-center pointer-events-none"
           >
-            <div className="flex items-center gap-3 bg-primary text-primary-foreground rounded-2xl px-5 py-3 shadow-2xl border border-primary/20">
+            <div className="pointer-events-auto flex items-center justify-between w-full max-w-[400px] gap-2 bg-primary text-primary-foreground rounded-2xl p-2 shadow-2xl border border-primary/20">
               <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center text-sm font-bold">
+                <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-sm font-bold shrink-0">
                   {selectedTxIds.size}
                 </div>
-                <span className="text-sm font-medium whitespace-nowrap">
-                  {selectedTxIds.size === 1 ? "transação selecionada" : "transações selecionadas"}
+                <span className="hidden sm:inline text-sm font-medium whitespace-nowrap">
+                  {selectedTxIds.size === 1 ? "selecionada" : "selecionadas"}
                 </span>
               </div>
-              <div className="w-px h-6 bg-white/20" />
-              <Button
-                variant="secondary"
-                size="sm"
-                className="h-8 text-xs font-semibold"
-                onClick={() => setShowBulkAssign(true)}
-              >
-                <UserPlus className="w-3.5 h-3.5 mr-1.5" />
-                Atribuir Responsável
-              </Button>
+              
+              <div className="flex items-center gap-1.5">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="h-8 text-xs font-semibold px-3 shrink-0"
+                  onClick={() => setShowBulkAssign(true)}
+                >
+                  <UserPlus className="w-3.5 h-3.5 sm:mr-1.5" />
+                  <span className="hidden sm:inline">Atribuir Responsável</span>
+                  <span className="sm:hidden ml-1.5">Atribuir</span>
+                </Button>
 
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 text-primary-foreground hover:bg-white/20"
-                onClick={deselectAll}
-              >
-                <X className="w-4 h-4" />
-              </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-primary-foreground hover:bg-white/20 shrink-0"
+                  onClick={deselectAll}
+                >
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
             </div>
           </motion.div>
         )}
