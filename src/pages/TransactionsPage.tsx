@@ -299,7 +299,7 @@ export default function TransactionsPage() {
       }
 
       const assigns = t.transaction_assignments;
-      if (assigns && assigns.length > 0 && type !== "payment" && amt > 0) {
+      if (assigns && assigns.length > 0 && type !== "payment") {
         for (const a of assigns) {
           const uid = a.user_id;
           const share = Number(a.share_amount) || 0;
@@ -404,7 +404,7 @@ export default function TransactionsPage() {
 
               <div className="flex flex-wrap items-center gap-2 mt-1.5">
                 <span className="text-xs text-muted-foreground">
-                  {new Date(t.date).toLocaleDateString("pt-BR")}
+                  {new Date(t.date + "T00:00:00").toLocaleDateString("pt-BR")}
                 </span>
                 {getTypeBadge(type, Number(t.amount))}
                 {t.category && (
@@ -1005,7 +1005,7 @@ export default function TransactionsPage() {
                           )}
                         </td>
                         <td className="p-3 whitespace-nowrap text-muted-foreground">
-                          {new Date(t.date).toLocaleDateString("pt-BR")}
+                          {new Date(t.date + "T00:00:00").toLocaleDateString("pt-BR")}
                         </td>
                         <td className="p-3">
                           <span className="font-medium">{t.description}</span>

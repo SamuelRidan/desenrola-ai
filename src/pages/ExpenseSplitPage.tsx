@@ -161,7 +161,7 @@ export default function ExpenseSplitPage() {
                             <div>
                               <span className="font-medium">{item.description}</span>
                               <span className="text-muted-foreground ml-2 text-xs">
-                                {item.date ? new Date(item.date).toLocaleDateString("pt-BR") : ""}
+                                {item.date ? new Date(item.date + "T00:00:00").toLocaleDateString("pt-BR") : ""}
                               </span>
                             </div>
                             <span className="font-heading text-sm">R$ {item.amount.toFixed(2)}</span>

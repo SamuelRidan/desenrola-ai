@@ -124,7 +124,7 @@ export default function MonthlyExpensesPage() {
                             {a.transactions?.alias || a.transactions?.description}
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            {a.transactions?.date ? new Date(a.transactions.date).toLocaleDateString("pt-BR") : ""}
+                            {a.transactions?.date ? new Date(a.transactions.date + "T00:00:00").toLocaleDateString("pt-BR") : ""}
                           </p>
                         </div>
                         <span className="font-heading text-sm font-semibold">
