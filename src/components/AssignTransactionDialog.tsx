@@ -108,15 +108,24 @@ export default function AssignTransactionDialog({ open, onOpenChange, transactio
 
   const toggleUser = (userId: string) => {
     setSelectedUsers((prev) => {
+      let next: string[];
       if (prev.includes(userId)) {
-        setAmounts((a) => {
-          const copy = { ...a };
-          delete copy[userId];
-          return copy;
-        });
-        return prev.filter((u) => u !== userId);
+        next = prev.filter((u) => u !== userId);
+      } else {
+        next = [...prev, userId];
       }
-      return [...prev, userId];
+      // Auto-split equally among selected users
+      if (transaction && next.length > 0) {
+        const share = (Math.abs(transaction.amount) / next.length).toFixed(2);
+        const newAmounts: Record<string, string> = {};
+        next.forEach((uid) => {
+          newAmounts[uid] = share;
+        });
+        setAmounts(newAmounts);
+      } else {
+        setAmounts({});
+      }
+      return next;
     });
   };
 

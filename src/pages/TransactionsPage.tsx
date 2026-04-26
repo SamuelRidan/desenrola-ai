@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { Search, CheckCircle, Users, DollarSign, User, Plus, CreditCard, AlertTriangle, Wallet, Scissors, Receipt, X, UserPlus, Calendar, ChevronLeft, ChevronRight, Layers, UserCircle } from "lucide-react";
+import { Search, CheckCircle, Users, DollarSign, User, Plus, CreditCard, AlertTriangle, Wallet, Scissors, Receipt, X, UserPlus, Calendar, ChevronLeft, ChevronRight, Layers, UserCircle, Trash2 } from "lucide-react";
 
 const MONTH_NAMES = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 const MONTH_NAMES_FULL = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
@@ -60,6 +60,7 @@ export default function TransactionsPage() {
   const [showBulkAssign, setShowBulkAssign] = useState(false);
   const [editingAliasId, setEditingAliasId] = useState<string | null>(null);
   const [aliasValue, setAliasValue] = useState("");
+  const [deletingTxId, setDeletingTxId] = useState<string | null>(null);
 
   const { data: statements } = useQuery({
     queryKey: ["statements-list"],
@@ -141,7 +142,19 @@ export default function TransactionsPage() {
     },
   });
 
-
+  const deleteTransaction = useMutation({
+    mutationFn: async (id: string) => {
+      await supabase.from("transaction_assignments").delete().eq("transaction_id", id);
+      const { error } = await supabase.from("transactions").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["transactions"] });
+      toast.success("Lançamento excluído");
+      setDeletingTxId(null);
+    },
+    onError: () => toast.error("Erro ao excluir lançamento"),
+  });
 
   const updateAlias = useMutation({
     mutationFn: async ({ id, alias }: { id: string; alias: string | null }) => {
@@ -470,8 +483,17 @@ export default function TransactionsPage() {
             <Scissors className="w-3.5 h-3.5 mr-1.5 text-primary" />
             Dividir
           </Button>
-
-
+          {role === "admin" && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-9 px-3 text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
+              onClick={() => setDeletingTxId(t.id)}
+            >
+              <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+              Excluir
+            </Button>
+          )}
         </div>
       </motion.div>
     );
@@ -1133,8 +1155,17 @@ export default function TransactionsPage() {
                             >
                               <Scissors className="w-3.5 h-3.5 text-primary" />
                             </Button>
-
-
+                            {role === "admin" && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 text-destructive/60 hover:text-destructive hover:bg-destructive/10"
+                                onClick={() => setDeletingTxId(t.id)}
+                                title="Excluir lançamento"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </Button>
+                            )}
                           </div>
                         </td>
                       </motion.tr>
@@ -1221,6 +1252,57 @@ export default function TransactionsPage() {
           statementId={selectedStatement}
         />
       )}
+
+      {/* Delete confirmation dialog */}
+      <AnimatePresence>
+        {deletingTxId && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+            onClick={() => setDeletingTxId(null)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              className="bg-card border border-border rounded-2xl shadow-2xl p-6 max-w-sm w-full space-y-4"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-full bg-destructive/10">
+                  <Trash2 className="w-5 h-5 text-destructive" />
+                </div>
+                <div>
+                  <h3 className="font-heading font-bold text-lg">Excluir lançamento</h3>
+                  <p className="text-sm text-muted-foreground">Esta ação não pode ser desfeita.</p>
+                </div>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Tem certeza que deseja excluir este lançamento? As atribuições associadas também serão removidas.
+              </p>
+              <div className="flex gap-2 justify-end">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setDeletingTxId(null)}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => deleteTransaction.mutate(deletingTxId)}
+                  disabled={deleteTransaction.isPending}
+                >
+                  {deleteTransaction.isPending ? "Excluindo..." : "Excluir"}
+                </Button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
