@@ -794,7 +794,7 @@ export default function TransactionsPage() {
         <div className="space-y-2">
           <div className="flex items-center gap-2">
             <UserCircle className="w-4 h-4 text-muted-foreground" />
-            <p className="text-sm font-medium text-muted-foreground">Responsável</p>
+            <p className="text-sm font-medium text-muted-foreground">Responsável pelo Cartão</p>
           </div>
           <div className="flex gap-2 overflow-x-auto pb-1.5 scrollbar-hide -mx-4 px-4 md:mx-0 md:px-0">
             <motion.button
@@ -989,7 +989,7 @@ export default function TransactionsPage() {
                   <th className="text-left p-3 font-medium text-muted-foreground whitespace-nowrap">Data</th>
                   <th className="text-left p-3 font-medium text-muted-foreground">Descrição</th>
                   <th className="text-left p-3 font-medium text-muted-foreground">Apelido</th>
-                  <th className="text-left p-3 font-medium text-muted-foreground whitespace-nowrap">Responsável</th>
+                  <th className="text-left p-3 font-medium text-muted-foreground whitespace-nowrap">Responsável pelo Cartão</th>
                   <th className="text-left p-3 font-medium text-muted-foreground whitespace-nowrap">Tipo</th>
                   <th className="text-left p-3 font-medium text-muted-foreground whitespace-nowrap">Categoria</th>
                   <th className="text-left p-3 font-medium text-muted-foreground whitespace-nowrap">Atribuído a</th>
