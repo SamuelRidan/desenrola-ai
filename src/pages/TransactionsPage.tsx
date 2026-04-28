@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { Search, CheckCircle, Users, DollarSign, User, Plus, CreditCard, AlertTriangle, Wallet, Scissors, Receipt, X, UserPlus, Calendar, ChevronLeft, ChevronRight, Layers, UserCircle, Trash2 } from "lucide-react";
+import { Search, CheckCircle, Users, DollarSign, User, Plus, CreditCard, AlertTriangle, Wallet, Scissors, Receipt, X, UserPlus, Calendar, ChevronLeft, ChevronRight, Layers, UserCircle, Trash2, CalendarClock } from "lucide-react";
 
 const MONTH_NAMES = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 const MONTH_NAMES_FULL = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
@@ -16,6 +16,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import AssignTransactionDialog from "@/components/AssignTransactionDialog";
 import AddTransactionDialog from "@/components/AddTransactionDialog";
 import BulkAssignDialog from "@/components/BulkAssignDialog";
+import InstallmentModal, { parseInstallment } from "@/components/InstallmentModal";
 
 const USER_COLORS = [
   { bg: "bg-violet-500/15", text: "text-violet-600", border: "border-violet-500/25", ring: "ring-violet-500/20" },
@@ -48,7 +49,7 @@ function getTypeBadge(type: string, amount: number) {
 }
 
 export default function TransactionsPage() {
-  const { role } = useAuth();
+  const { role, user: currentUser } = useAuth();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [selectedStatement, setSelectedStatement] = useState<string>("");
@@ -61,6 +62,7 @@ export default function TransactionsPage() {
   const [editingAliasId, setEditingAliasId] = useState<string | null>(null);
   const [aliasValue, setAliasValue] = useState("");
   const [deletingTxId, setDeletingTxId] = useState<string | null>(null);
+  const [showInstallments, setShowInstallments] = useState(false);
 
   const { data: statements } = useQuery({
     queryKey: ["statements-list"],
@@ -286,6 +288,17 @@ export default function TransactionsPage() {
     setSelectedTxIds(new Set());
   }, [selectedStatement]);
 
+  // Count installment transactions for badge
+  const installmentCount = useMemo(() => {
+    if (!rawTransactions) return 0;
+    return rawTransactions.filter((t: any) => {
+      if ((t.type || "purchase") === "payment") return false;
+      const parsed = parseInstallment(t.description || "");
+      if (!parsed) return false;
+      // We count all active installments for the month
+      return parsed.total > 1 && parsed.current <= parsed.total && parsed.current >= 1;
+    }).length;
+  }, [rawTransactions]);
 
 
   const summary = useMemo(() => {
@@ -512,13 +525,25 @@ export default function TransactionsPage() {
             {summary ? `${summary.count} lançamentos` : "Visualize e gerencie lançamentos"}
           </p>
         </div>
-        {selectedStatement && selectedStatement !== "all" && role === "admin" && (
-          <Button onClick={() => setShowAddDialog(true)} size="sm">
-            <Plus className="w-4 h-4 mr-1" />
-            <span className="hidden sm:inline">Adicionar Lançamento</span>
-            <span className="sm:hidden">Adicionar</span>
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {installmentCount > 0 && (
+            <Button onClick={() => setShowInstallments(true)} size="sm" variant="outline" className="relative">
+              <CalendarClock className="w-4 h-4 mr-1" />
+              <span className="hidden sm:inline">Parcelas</span>
+              <span className="sm:hidden">Parc.</span>
+              <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] rounded-full bg-primary text-primary-foreground text-[10px] font-bold flex items-center justify-center px-1">
+                {installmentCount}
+              </span>
+            </Button>
+          )}
+          {selectedStatement && selectedStatement !== "all" && role === "admin" && (
+            <Button onClick={() => setShowAddDialog(true)} size="sm">
+              <Plus className="w-4 h-4 mr-1" />
+              <span className="hidden sm:inline">Adicionar Lançamento</span>
+              <span className="sm:hidden">Adicionar</span>
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Summary Section - Hero + Cards */}
@@ -1243,6 +1268,16 @@ export default function TransactionsPage() {
         onOpenChange={setShowBulkAssign}
         transactions={selectedTxData}
         onComplete={deselectAll}
+      />
+      <InstallmentModal
+        open={showInstallments}
+        onOpenChange={setShowInstallments}
+        transactions={rawTransactions || []}
+        profileMap={profileMap}
+        statementMonth={statements?.find((s: any) => s.id === effectiveStatement)?.month}
+        statementYear={statements?.find((s: any) => s.id === effectiveStatement)?.year}
+        userRole={role}
+        currentUserId={currentUser?.id}
       />
 
       {selectedStatement && selectedStatement !== "all" && (
