@@ -179,28 +179,14 @@ export default function PaymentsPage() {
     return map;
   }, [profileMap]);
 
-  // Transaction assignments for all statements of selected card
-  const { data: assignments } = useQuery({
-    queryKey: ["statement-assignments", statementIds],
-    queryFn: async () => {
-      if (statementIds.length === 0) return [];
-      const { data } = await supabase
-        .from("transaction_assignments")
-        .select("user_id, share_amount, transaction_id, transactions!inner(statement_id, type, amount)")
-        .in("transactions.statement_id", statementIds);
-      return data ?? [];
-    },
-    enabled: statementIds.length > 0,
-  });
-
-  // Transactions for unassigned calculation
+  // Transactions for all statements of selected card (used for assignments + unassigned calc)
   const { data: allTransactions } = useQuery({
     queryKey: ["statement-transactions", statementIds],
     queryFn: async () => {
       if (statementIds.length === 0) return [];
       const { data } = await supabase
         .from("transactions")
-        .select("id, statement_id, amount, type")
+        .select("id, statement_id, amount, type, transaction_assignments(user_id, share_amount)")
         .in("statement_id", statementIds);
       return data ?? [];
     },
@@ -348,29 +334,32 @@ export default function PaymentsPage() {
 
   // ── Per-User Report Data ──
 
-  // Assignments grouped by statement → user
+  // Assignments grouped by statement → user (extracted from allTransactions which includes nested assignments)
   const assignmentsByStatement = useMemo(() => {
     const map: Record<string, Record<string, number>> = {};
-    for (const a of assignments ?? []) {
-      const stmtId = (a as any).transactions?.statement_id;
-      if (!stmtId) continue;
-      if (!map[stmtId]) map[stmtId] = {};
-      const uid = a.user_id;
-      map[stmtId][uid] = (map[stmtId][uid] || 0) + Number(a.share_amount);
+    for (const t of allTransactions ?? []) {
+      const type = t.type || "purchase";
+      if (type === "payment") continue;
+      const assigns = (t as any).transaction_assignments;
+      if (!assigns || assigns.length === 0) continue;
+      if (!map[t.statement_id]) map[t.statement_id] = {};
+      for (const a of assigns) {
+        const uid = a.user_id;
+        map[t.statement_id][uid] = (map[t.statement_id][uid] || 0) + Number(a.share_amount);
+      }
     }
     return map;
-  }, [assignments]);
+  }, [allTransactions]);
 
-  // Total charges (purchases + interest, excluding payments) per statement
+  // Total charges (net purchases + interest, excluding payments) per statement
+  // Matches TransactionsPage: totalCharges = (positive purchases - refunds) + interest
   const chargesByStatement = useMemo(() => {
     const map: Record<string, number> = {};
     for (const t of allTransactions ?? []) {
       const type = t.type || "purchase";
       if (type === "payment") continue;
       const amt = Number(t.amount) || 0;
-      if (amt > 0) {
-        map[t.statement_id] = (map[t.statement_id] || 0) + amt;
-      }
+      map[t.statement_id] = (map[t.statement_id] || 0) + amt;
     }
     return map;
   }, [allTransactions]);
@@ -425,22 +414,17 @@ export default function PaymentsPage() {
     });
   }, [statementSummaries, assignmentsByStatement, paymentsByStatementUser, chargesByStatement, profileMap]);
 
-  // Global user summary (all months combined)
+  // Global user summary (latest month only — as requested)
   const globalUserSummary = useMemo(() => {
-    const userMap: Record<string, { name: string; assigned: number; paid: number; open: number }> = {};
-    let totalUnassigned = 0;
-    for (const report of userReportByStatement) {
-      totalUnassigned += report.unassignedAmount;
-      for (const u of report.users) {
-        if (!userMap[u.userId]) userMap[u.userId] = { name: u.name, assigned: 0, paid: 0, open: 0 };
-        userMap[u.userId].assigned += u.assigned;
-        userMap[u.userId].paid += u.paid;
-        userMap[u.userId].open += u.open;
-      }
-    }
-    const users = Object.entries(userMap).map(([uid, info]) => ({ userId: uid, ...info, percentPaid: info.assigned > 0 ? Math.min(100, (info.paid / info.assigned) * 100) : 0 }));
+    if (userReportByStatement.length === 0) return { users: [], totalUnassigned: 0, monthLabel: "" };
+    // statementSummaries is sorted by year desc, month desc — first item is latest
+    const latestReport = userReportByStatement[0];
+    const users = latestReport.users.map((u) => ({
+      ...u,
+      percentPaid: u.assigned > 0 ? Math.min(100, (u.paid / u.assigned) * 100) : 0,
+    }));
     users.sort((a, b) => b.open - a.open);
-    return { users, totalUnassigned };
+    return { users, totalUnassigned: latestReport.unassignedAmount, monthLabel: latestReport.monthLabel };
   }, [userReportByStatement]);
 
   // ── Handlers ──
@@ -519,38 +503,57 @@ export default function PaymentsPage() {
         </p>
       </div>
 
-      {/* Card Selector */}
-      <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-end">
-        <div className="w-full sm:w-80 space-y-1.5">
-          <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Cartão</Label>
-          <Select value={selectedCardId} onValueChange={setSelectedCardId}>
-            <SelectTrigger className="h-10">
-              <SelectValue placeholder="Selecione um cartão" />
-            </SelectTrigger>
-            <SelectContent>
-              {cards?.map((c) => (
-                <SelectItem key={c.id} value={c.id}>
-                  <div className="flex items-center gap-2">
-                    <CreditCard className="w-4 h-4 text-primary" />
-                    {c.name} (•••• {c.last_four_digits})
-                  </div>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+      {/* Card Carousel Selector */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+            Selecione o Cartão
+          </Label>
+          {selectedCard && cardInterestRate > 0 && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="flex items-center gap-1.5 px-2 py-1 rounded bg-amber-500/10 border border-amber-500/20"
+            >
+              <Percent className="w-3 h-3 text-amber-600" />
+              <span className="text-[10px] font-medium text-amber-700">
+                <span className="font-bold">{cardInterestRate.toFixed(2)}%</span> a.m.
+              </span>
+            </motion.div>
+          )}
         </div>
-        {selectedCard && cardInterestRate > 0 && (
-          <motion.div
-            initial={{ opacity: 0, x: -10 }}
-            animate={{ opacity: 1, x: 0 }}
-            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/20"
-          >
-            <Percent className="w-4 h-4 text-amber-600" />
-            <span className="text-sm font-medium text-amber-700">
-              Taxa de juros: <span className="font-bold">{cardInterestRate.toFixed(2)}% a.m.</span>
-            </span>
-          </motion.div>
-        )}
+        <div className="flex overflow-x-auto gap-3 pb-2 -mx-4 px-4 sm:mx-0 sm:px-0 scrollbar-none snap-x">
+          {cards?.map((c) => {
+            const isSelected = selectedCardId === c.id;
+            return (
+              <button
+                key={c.id}
+                onClick={() => setSelectedCardId(c.id)}
+                className={`snap-center shrink-0 flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-all w-[240px] sm:w-[260px] ${
+                  isSelected
+                    ? "bg-primary/5 border-primary ring-1 ring-primary/20 shadow-sm"
+                    : "bg-card border-border hover:border-primary/30 hover:bg-muted/50"
+                }`}
+              >
+                <div
+                  className={`p-2 rounded-full flex-shrink-0 ${
+                    isSelected ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                  }`}
+                >
+                  <CreditCard className="w-5 h-5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className={`font-medium text-sm truncate ${isSelected ? "text-primary" : "text-foreground"}`}>
+                    {c.name}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5 font-mono">
+                    •••• {c.last_four_digits}
+                  </p>
+                </div>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {!selectedCardId ? (
@@ -1066,7 +1069,7 @@ export default function PaymentsPage() {
                     <div>
                       <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3 flex items-center gap-1">
                         <TrendingUp className="w-3 h-3" />
-                        Resumo Global (todos os meses)
+                        Resumo — {globalUserSummary.monthLabel || "Último Mês"}
                       </p>
                       <div className="overflow-x-auto -mx-6 px-6">
                         <table className="w-full text-sm">
@@ -1205,7 +1208,7 @@ export default function PaymentsPage() {
                                           </Badge>
                                         )}
                                       </div>
-                                      <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
+                                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground mt-0.5">
                                         <span>Atrib: R$ {formatBRL(u.assigned)}</span>
                                         <span className="text-emerald-600">Pago: R$ {formatBRL(u.paid)}</span>
                                         {u.open > 0 && <span className="text-red-600 font-medium">Aberto: R$ {formatBRL(u.open)}</span>}

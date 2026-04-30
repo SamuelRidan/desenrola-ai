@@ -144,11 +144,18 @@ export default function StatementUploadPage() {
       setProgress(100);
       setProcessingStep("Concluído!");
 
-      toast.success(
-        `Fatura processada! ${parseResult.count} lançamentos importados.`
-      );
+      if (parseResult.interest_rate) {
+        toast.success(
+          `Fatura processada! ${parseResult.count} lançamentos importados. Taxa de juros (${parseResult.interest_rate}%) atualizada no cartão.`
+        );
+      } else {
+        toast.success(
+          `Fatura processada! ${parseResult.count} lançamentos importados.`
+        );
+      }
       queryClient.invalidateQueries({ queryKey: ["statements"] });
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["credit-cards"] });
       setFile(null);
       setCardId("");
       setMonth("");
