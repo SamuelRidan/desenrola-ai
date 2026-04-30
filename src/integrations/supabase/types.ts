@@ -55,6 +55,7 @@ export type Database = {
           payment_date: string | null
           notes: string | null
           created_by: string | null
+          paid_by_user_id: string | null
           created_at: string
           updated_at: string
         }
@@ -65,6 +66,7 @@ export type Database = {
           payment_date?: string | null
           notes?: string | null
           created_by?: string | null
+          paid_by_user_id?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -75,6 +77,7 @@ export type Database = {
           payment_date?: string | null
           notes?: string | null
           created_by?: string | null
+          paid_by_user_id?: string | null
           created_at?: string
           updated_at?: string
         }

@@ -16,7 +16,7 @@ import { toast } from "sonner";
 import {
   Wallet, CreditCard, Plus, Pencil, Trash2, CheckCircle, TrendingUp,
   Calendar, FileText, AlertTriangle, Calculator, ChevronRight, X, StickyNote,
-  CircleDollarSign, Percent
+  CircleDollarSign, Percent, Users, User
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -28,6 +28,19 @@ const MONTHS = [
 const formatBRL = (v: number) =>
   v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+const USER_COLORS = [
+  { bg: "bg-violet-500/15", text: "text-violet-600", border: "border-violet-500/25" },
+  { bg: "bg-sky-500/15", text: "text-sky-600", border: "border-sky-500/25" },
+  { bg: "bg-amber-500/15", text: "text-amber-600", border: "border-amber-500/25" },
+  { bg: "bg-rose-500/15", text: "text-rose-600", border: "border-rose-500/25" },
+  { bg: "bg-emerald-500/15", text: "text-emerald-600", border: "border-emerald-500/25" },
+  { bg: "bg-indigo-500/15", text: "text-indigo-600", border: "border-indigo-500/25" },
+];
+
+function getInitials(name: string) {
+  return name.split(" ").map((w) => w[0]).filter(Boolean).slice(0, 2).join("").toUpperCase();
+}
+
 type PaymentRow = {
   id: string;
   statement_id: string;
@@ -35,6 +48,7 @@ type PaymentRow = {
   payment_date: string | null;
   notes: string | null;
   created_by: string | null;
+  paid_by_user_id: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -64,6 +78,7 @@ export default function PaymentsPage() {
   const [payAmount, setPayAmount] = useState("");
   const [payDate, setPayDate] = useState(new Date().toISOString().slice(0, 10));
   const [payNotes, setPayNotes] = useState("");
+  const [payPaidBy, setPayPaidBy] = useState<string>("");
 
   // Editing state
   const [editingPaymentId, setEditingPaymentId] = useState<string | null>(null);
@@ -141,6 +156,57 @@ export default function PaymentsPage() {
     enabled: statementIds.length > 0,
   });
 
+  // Profiles for user dropdown
+  const { data: profiles } = useQuery({
+    queryKey: ["all-profiles"],
+    queryFn: async () => {
+      const { data } = await supabase.from("profiles").select("user_id, full_name");
+      return data ?? [];
+    },
+  });
+
+  const profileMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const p of profiles ?? []) map[p.user_id] = p.full_name;
+    return map;
+  }, [profiles]);
+
+  const userColorMap = useMemo(() => {
+    const map: Record<string, typeof USER_COLORS[0]> = {};
+    Object.keys(profileMap).forEach((uid, i) => {
+      map[uid] = USER_COLORS[i % USER_COLORS.length];
+    });
+    return map;
+  }, [profileMap]);
+
+  // Transaction assignments for all statements of selected card
+  const { data: assignments } = useQuery({
+    queryKey: ["statement-assignments", statementIds],
+    queryFn: async () => {
+      if (statementIds.length === 0) return [];
+      const { data } = await supabase
+        .from("transaction_assignments")
+        .select("user_id, share_amount, transaction_id, transactions!inner(statement_id, type, amount)")
+        .in("transactions.statement_id", statementIds);
+      return data ?? [];
+    },
+    enabled: statementIds.length > 0,
+  });
+
+  // Transactions for unassigned calculation
+  const { data: allTransactions } = useQuery({
+    queryKey: ["statement-transactions", statementIds],
+    queryFn: async () => {
+      if (statementIds.length === 0) return [];
+      const { data } = await supabase
+        .from("transactions")
+        .select("id, statement_id, amount, type")
+        .in("statement_id", statementIds);
+      return data ?? [];
+    },
+    enabled: statementIds.length > 0,
+  });
+
   // ── Mutations ──
 
   const createPayment = useMutation({
@@ -149,6 +215,7 @@ export default function PaymentsPage() {
       amount_paid: number;
       payment_date: string;
       notes: string;
+      paid_by_user_id: string;
     }) => {
       const { error } = await supabase.from("invoice_payments").insert({
         ...payload,
@@ -162,6 +229,7 @@ export default function PaymentsPage() {
       setPaymentDialog({ open: false, statementId: "", totalFatura: 0, monthLabel: "" });
       setPayAmount("");
       setPayNotes("");
+      setPayPaidBy("");
     },
     onError: (e: any) => toast.error("Erro: " + e.message),
   });
@@ -278,6 +346,103 @@ export default function PaymentsPage() {
     return rows;
   }, [globalSummary.totalOpen, effectiveRate, simMonths]);
 
+  // ── Per-User Report Data ──
+
+  // Assignments grouped by statement → user
+  const assignmentsByStatement = useMemo(() => {
+    const map: Record<string, Record<string, number>> = {};
+    for (const a of assignments ?? []) {
+      const stmtId = (a as any).transactions?.statement_id;
+      if (!stmtId) continue;
+      if (!map[stmtId]) map[stmtId] = {};
+      const uid = a.user_id;
+      map[stmtId][uid] = (map[stmtId][uid] || 0) + Number(a.share_amount);
+    }
+    return map;
+  }, [assignments]);
+
+  // Total charges (purchases + interest, excluding payments) per statement
+  const chargesByStatement = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const t of allTransactions ?? []) {
+      const type = t.type || "purchase";
+      if (type === "payment") continue;
+      const amt = Number(t.amount) || 0;
+      if (amt > 0) {
+        map[t.statement_id] = (map[t.statement_id] || 0) + amt;
+      }
+    }
+    return map;
+  }, [allTransactions]);
+
+  // Payments grouped by statement → user (paid_by_user_id)
+  const paymentsByStatementUser = useMemo(() => {
+    const map: Record<string, Record<string, number>> = {};
+    for (const p of payments ?? []) {
+      const uid = p.paid_by_user_id;
+      if (!uid) continue;
+      if (!map[p.statement_id]) map[p.statement_id] = {};
+      map[p.statement_id][uid] = (map[p.statement_id][uid] || 0) + Number(p.amount_paid);
+    }
+    return map;
+  }, [payments]);
+
+  // Per-statement user report
+  const userReportByStatement = useMemo(() => {
+    if (!statements) return [];
+    return statementSummaries.map((s) => {
+      const stmtAssignments = assignmentsByStatement[s.id] || {};
+      const stmtPaymentsByUser = paymentsByStatementUser[s.id] || {};
+      const totalCharges = chargesByStatement[s.id] || 0;
+      const totalAssigned = Object.values(stmtAssignments).reduce((a, b) => a + b, 0);
+      const unassignedAmount = Math.max(0, totalCharges - totalAssigned);
+
+      // Collect all user IDs from both assignments and payments
+      const allUserIds = new Set([...Object.keys(stmtAssignments), ...Object.keys(stmtPaymentsByUser)]);
+      const users: { userId: string; name: string; assigned: number; paid: number; open: number; percentPaid: number }[] = [];
+      for (const uid of allUserIds) {
+        const assigned = stmtAssignments[uid] || 0;
+        const paid = stmtPaymentsByUser[uid] || 0;
+        const open = Math.max(0, assigned - paid);
+        const percentPaid = assigned > 0 ? Math.min(100, (paid / assigned) * 100) : (paid > 0 ? 100 : 0);
+        users.push({ userId: uid, name: profileMap[uid] || "Desconhecido", assigned, paid, open, percentPaid });
+      }
+      users.sort((a, b) => b.open - a.open);
+
+      return {
+        statementId: s.id,
+        month: s.month,
+        year: s.year,
+        monthLabel: `${MONTHS[s.month - 1]} ${s.year}`,
+        totalFatura: Number(s.total_fatura) || 0,
+        totalCharges,
+        totalAssigned,
+        unassignedAmount,
+        totalPaid: s.totalPaid,
+        openBalance: s.openBalance,
+        users,
+      };
+    });
+  }, [statementSummaries, assignmentsByStatement, paymentsByStatementUser, chargesByStatement, profileMap]);
+
+  // Global user summary (all months combined)
+  const globalUserSummary = useMemo(() => {
+    const userMap: Record<string, { name: string; assigned: number; paid: number; open: number }> = {};
+    let totalUnassigned = 0;
+    for (const report of userReportByStatement) {
+      totalUnassigned += report.unassignedAmount;
+      for (const u of report.users) {
+        if (!userMap[u.userId]) userMap[u.userId] = { name: u.name, assigned: 0, paid: 0, open: 0 };
+        userMap[u.userId].assigned += u.assigned;
+        userMap[u.userId].paid += u.paid;
+        userMap[u.userId].open += u.open;
+      }
+    }
+    const users = Object.entries(userMap).map(([uid, info]) => ({ userId: uid, ...info, percentPaid: info.assigned > 0 ? Math.min(100, (info.paid / info.assigned) * 100) : 0 }));
+    users.sort((a, b) => b.open - a.open);
+    return { users, totalUnassigned };
+  }, [userReportByStatement]);
+
   // ── Handlers ──
 
   const openPaymentDialog = useCallback(
@@ -286,6 +451,7 @@ export default function PaymentsPage() {
       setPayAmount("");
       setPayDate(new Date().toISOString().slice(0, 10));
       setPayNotes("");
+      setPayPaidBy("");
     },
     []
   );
@@ -298,14 +464,19 @@ export default function PaymentsPage() {
         toast.error("Informe um valor válido");
         return;
       }
+      if (!payPaidBy) {
+        toast.error("Selecione quem pagou");
+        return;
+      }
       createPayment.mutate({
         statement_id: paymentDialog.statementId,
         amount_paid: amount,
         payment_date: payDate,
         notes: payNotes.trim() || "",
+        paid_by_user_id: payPaidBy,
       });
     },
-    [payAmount, payDate, payNotes, paymentDialog.statementId, createPayment]
+    [payAmount, payDate, payNotes, payPaidBy, paymentDialog.statementId, createPayment]
   );
 
   const startEditing = useCallback((payment: PaymentRow) => {
@@ -628,12 +799,23 @@ export default function PaymentsPage() {
                                       ) : (
                                         // View mode
                                         <>
-                                          <div className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                                          {p.paid_by_user_id && profileMap[p.paid_by_user_id] ? (
+                                            <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${(userColorMap[p.paid_by_user_id] || USER_COLORS[0]).bg} ${(userColorMap[p.paid_by_user_id] || USER_COLORS[0]).text}`}>
+                                              {getInitials(profileMap[p.paid_by_user_id])}
+                                            </div>
+                                          ) : (
+                                            <div className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                                          )}
                                           <div className="flex-1 min-w-0">
-                                            <div className="flex items-center gap-2">
+                                            <div className="flex items-center gap-2 flex-wrap">
                                               <span className="font-heading font-semibold text-sm text-emerald-600">
                                                 R$ {formatBRL(Number(p.amount_paid))}
                                               </span>
+                                              {p.paid_by_user_id && profileMap[p.paid_by_user_id] && (
+                                                <span className={`text-xs font-medium ${(userColorMap[p.paid_by_user_id] || USER_COLORS[0]).text}`}>
+                                                  {profileMap[p.paid_by_user_id].split(" ")[0]}
+                                                </span>
+                                              )}
                                               {p.payment_date && (
                                                 <span className="text-xs text-muted-foreground">
                                                   em {new Date(p.payment_date + "T00:00:00").toLocaleDateString("pt-BR")}
@@ -863,6 +1045,211 @@ export default function PaymentsPage() {
             </div>
           )}
 
+          {/* ── Per-User Balance Report ── */}
+          {statementSummaries.length > 0 && (globalUserSummary.users.length > 0 || globalUserSummary.totalUnassigned > 0) && (
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.35 }}
+            >
+              <Card className="shadow-card overflow-hidden">
+                <CardHeader className="pb-3">
+                  <CardTitle className="font-heading text-base md:text-lg flex items-center gap-2">
+                    <Users className="w-5 h-5 text-primary" />
+                    Saldo Aberto por Usuário
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-6">
+
+                  {/* Global User Summary Table */}
+                  {globalUserSummary.users.length > 0 && (
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3 flex items-center gap-1">
+                        <TrendingUp className="w-3 h-3" />
+                        Resumo Global (todos os meses)
+                      </p>
+                      <div className="overflow-x-auto -mx-6 px-6">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b border-border">
+                              <th className="text-left py-2 px-3 text-xs font-medium text-muted-foreground">Usuário</th>
+                              <th className="text-right py-2 px-3 text-xs font-medium text-muted-foreground">Atribuído</th>
+                              <th className="text-right py-2 px-3 text-xs font-medium text-muted-foreground">Pago</th>
+                              <th className="text-right py-2 px-3 text-xs font-medium text-muted-foreground">Em Aberto</th>
+                              {effectiveRate > 0 && (
+                                <th className="text-right py-2 px-3 text-xs font-medium text-muted-foreground">Juros 1 mês</th>
+                              )}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {globalUserSummary.users.map((u) => {
+                              const colors = userColorMap[u.userId] || USER_COLORS[0];
+                              const interestNextMonth = effectiveRate > 0 ? u.open * (effectiveRate / 100) : 0;
+                              return (
+                                <tr key={u.userId} className="border-b border-border/50 last:border-0">
+                                  <td className="py-2 px-3">
+                                    <div className="flex items-center gap-2">
+                                      <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold ${colors.bg} ${colors.text}`}>
+                                        {getInitials(u.name)}
+                                      </div>
+                                      <span className="font-medium text-sm">{u.name}</span>
+                                    </div>
+                                  </td>
+                                  <td className="py-2 px-3 text-right text-muted-foreground">R$ {formatBRL(u.assigned)}</td>
+                                  <td className="py-2 px-3 text-right text-emerald-600 font-medium">R$ {formatBRL(u.paid)}</td>
+                                  <td className={`py-2 px-3 text-right font-heading font-bold ${u.open > 0 ? "text-red-600" : "text-emerald-600"}`}>
+                                    {u.open > 0 ? `R$ ${formatBRL(u.open)}` : "✅ Quitado"}
+                                  </td>
+                                  {effectiveRate > 0 && (
+                                    <td className="py-2 px-3 text-right text-red-500 text-xs">
+                                      {u.open > 0 ? `+R$ ${formatBRL(interestNextMonth)}` : "—"}
+                                    </td>
+                                  )}
+                                </tr>
+                              );
+                            })}
+                            {globalUserSummary.totalUnassigned > 0.01 && (
+                              <tr className="border-b border-border/50 bg-amber-500/5">
+                                <td className="py-2 px-3">
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold bg-amber-500/15 text-amber-600">
+                                      <AlertTriangle className="w-3 h-3" />
+                                    </div>
+                                    <span className="font-medium text-sm text-amber-700">Sem Atribuição</span>
+                                  </div>
+                                </td>
+                                <td className="py-2 px-3 text-right text-amber-600 font-medium">R$ {formatBRL(globalUserSummary.totalUnassigned)}</td>
+                                <td className="py-2 px-3 text-right text-muted-foreground">—</td>
+                                <td className="py-2 px-3 text-right font-heading font-bold text-amber-600">R$ {formatBRL(globalUserSummary.totalUnassigned)}</td>
+                                {effectiveRate > 0 && (
+                                  <td className="py-2 px-3 text-right text-red-500 text-xs">
+                                    +R$ {formatBRL(globalUserSummary.totalUnassigned * (effectiveRate / 100))}
+                                  </td>
+                                )}
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Month-by-Month Breakdown */}
+                  <div className="space-y-4">
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                      <Calendar className="w-3 h-3" />
+                      Detalhamento Mês a Mês
+                    </p>
+
+                    {userReportByStatement.map((report, ri) => (
+                      <motion.div
+                        key={report.statementId}
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: Math.min(ri * 0.05, 0.3) }}
+                        className="rounded-xl border border-border overflow-hidden"
+                      >
+                        {/* Month header */}
+                        <div className="p-3 md:p-4 bg-muted/30 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                          <div>
+                            <p className="font-heading font-semibold text-sm md:text-base">{report.monthLabel}</p>
+                            <p className="text-xs text-muted-foreground">
+                              Fatura: R$ {formatBRL(report.totalFatura)} · Atribuído: R$ {formatBRL(report.totalAssigned)} · Pago: R$ {formatBRL(report.totalPaid)}
+                            </p>
+                          </div>
+                          <Badge
+                            variant="outline"
+                            className={`text-xs font-medium shrink-0 ${
+                              report.openBalance <= 0
+                                ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20"
+                                : "bg-red-500/10 text-red-600 border-red-500/20"
+                            }`}
+                          >
+                            {report.openBalance <= 0 ? "Quitado" : `R$ ${formatBRL(report.openBalance)} em aberto`}
+                          </Badge>
+                        </div>
+
+                        {/* Unassigned alert */}
+                        {report.unassignedAmount > 0.01 && (
+                          <div className="mx-3 md:mx-4 mt-2 mb-1 flex items-start gap-2 p-2.5 rounded-lg bg-amber-500/8 border border-amber-500/20">
+                            <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
+                            <div>
+                              <p className="text-xs font-medium text-amber-700">
+                                R$ {formatBRL(report.unassignedAmount)} em lançamentos sem atribuição
+                              </p>
+                              <p className="text-[10px] text-amber-600/70 mt-0.5">
+                                Atribua na tela de Transações para rastrear por pessoa
+                              </p>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Per-user breakdown */}
+                        {report.users.length > 0 ? (
+                          <div className="p-3 md:p-4 space-y-2.5">
+                            {report.users.map((u) => {
+                              const colors = userColorMap[u.userId] || USER_COLORS[0];
+                              const interestNextMonth = effectiveRate > 0 ? u.open * (effectiveRate / 100) : 0;
+                              return (
+                                <div key={u.userId} className={`rounded-lg border ${colors.border} ${colors.bg} p-3 relative overflow-hidden`}>
+                                  <div className="flex items-center gap-2.5 sm:gap-3">
+                                    <div className={`w-8 h-8 rounded-full ${colors.bg} ${colors.text} flex items-center justify-center text-xs font-bold ring-2 ring-white/30`}>
+                                      {getInitials(u.name)}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-2">
+                                        <span className="font-medium text-sm truncate">{u.name}</span>
+                                        {u.percentPaid >= 99.9 && (
+                                          <Badge variant="outline" className="text-[9px] bg-emerald-500/10 text-emerald-600 border-emerald-500/20 px-1.5 py-0">
+                                            ✅ Quitado
+                                          </Badge>
+                                        )}
+                                      </div>
+                                      <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
+                                        <span>Atrib: R$ {formatBRL(u.assigned)}</span>
+                                        <span className="text-emerald-600">Pago: R$ {formatBRL(u.paid)}</span>
+                                        {u.open > 0 && <span className="text-red-600 font-medium">Aberto: R$ {formatBRL(u.open)}</span>}
+                                      </div>
+                                    </div>
+                                    <div className="text-right shrink-0">
+                                      <p className={`font-heading font-bold text-sm md:text-base ${u.open > 0 ? colors.text : "text-emerald-600"}`}>
+                                        {u.open > 0 ? `R$ ${formatBRL(u.open)}` : "R$ 0,00"}
+                                      </p>
+                                      {effectiveRate > 0 && u.open > 0 && (
+                                        <p className="text-[10px] text-red-500">+R$ {formatBRL(interestNextMonth)} juros</p>
+                                      )}
+                                    </div>
+                                  </div>
+                                  {/* Progress bar */}
+                                  <div className="mt-2">
+                                    <Progress
+                                      value={u.percentPaid}
+                                      className={`h-1.5 ${
+                                        u.percentPaid >= 99.9
+                                          ? "[&>div]:bg-emerald-500"
+                                          : u.percentPaid > 0
+                                          ? "[&>div]:bg-amber-500"
+                                          : "[&>div]:bg-red-400"
+                                      }`}
+                                    />
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="p-3 md:p-4 text-center">
+                            <p className="text-xs text-muted-foreground">Nenhuma atribuição ou pagamento registrado</p>
+                          </div>
+                        )}
+                      </motion.div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+          )}
+
           {/* Empty state */}
           {statements && statements.length === 0 && (
             <Card className="shadow-card">
@@ -901,6 +1288,26 @@ export default function PaymentsPage() {
               <p className="text-xs text-muted-foreground mt-1">
                 Valor da fatura: <span className="font-semibold">R$ {formatBRL(paymentDialog.totalFatura)}</span>
               </p>
+            </div>
+            <div className="space-y-2">
+              <Label>Quem Pagou? *</Label>
+              <Select value={payPaidBy} onValueChange={setPayPaidBy}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione o usuário" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(profiles ?? []).map((p) => (
+                    <SelectItem key={p.user_id} value={p.user_id}>
+                      <div className="flex items-center gap-2">
+                        <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold ${(userColorMap[p.user_id] || USER_COLORS[0]).bg} ${(userColorMap[p.user_id] || USER_COLORS[0]).text}`}>
+                          {getInitials(p.full_name)}
+                        </div>
+                        {p.full_name}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
               <Label>Valor Pago (R$)</Label>

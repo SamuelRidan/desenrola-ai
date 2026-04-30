@@ -3,13 +3,14 @@ ALTER TABLE public.credit_cards
   ADD COLUMN IF NOT EXISTS interest_rate NUMERIC(6,4) DEFAULT 0;
 
 -- Create invoice_payments table for tracking monthly bill payments
-CREATE TABLE public.invoice_payments (
+CREATE TABLE IF NOT EXISTS public.invoice_payments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   statement_id UUID REFERENCES public.statements(id) ON DELETE CASCADE NOT NULL,
   amount_paid NUMERIC(12,2) NOT NULL DEFAULT 0,
   payment_date DATE,
   notes TEXT,
   created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+  paid_by_user_id UUID REFERENCES auth.users(id),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
