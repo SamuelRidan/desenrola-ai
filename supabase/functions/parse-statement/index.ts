@@ -127,6 +127,34 @@ Se NÃO encontrar taxa de juros no documento, retorne null para taxa_juros_mensa
 IMPORTANTE: O valor deve ser a taxa PERCENTUAL mensal (ex: 14.90 para 14,90% ao mês). NÃO converta para decimal.`;
 
 const USER_MESSAGE = "Extraia todos os lançamentos desta fatura de cartão de crédito. IMPORTANTE: (1) Use o SALDO FINANCIADO como saldo_anterior (fatura anterior - pagamento), NÃO o valor total da fatura anterior. (2) NÃO inclua pagamentos da fatura anterior nem créditos de rotativo como transações. (3) Inclua APENAS compras e juros/IOF individuais da lista de transações.";
+
+/**
+ * Normalizes an installment description by stripping the installment suffix.
+ * E.g. "AMAZON PARC 03/12" → "AMAZON"
+ *      "Mp *37551516silva - Parcela 1/10" → "Mp *37551516silva"
+ *      "LOJA VIRTUAL 02/05" → "LOJA VIRTUAL"
+ * Returns null if the description is NOT an installment.
+ */
+function normalizeInstallmentDesc(description: string): string | null {
+  // 1. Match "PARC", "PARCELA", "Parcela", "PARC." followed by XX/YY or XX DE YY
+  const match = description.match(/^(.*?)\s*[-–]?\s*\bPARC(?:ELA)?\.?\s*\d{1,2}\s*(?:\/|DE)\s*\d{1,2}\b(.*)$/i);
+  if (match) {
+    const cleaned = (match[1] + " " + match[2]).replace(/\s+/g, " ").trim();
+    return cleaned || null;
+  }
+  // 2. Fallback: XX/YY at the end
+  const endMatch = description.match(/^(.*?)\s*[-–]?\s*\d{1,2}\s*(?:\/|DE)\s*\d{1,2}\s*$/i);
+  if (endMatch) {
+    const current = parseInt(description.match(/(\d{1,2})\s*(?:\/|DE)\s*(\d{1,2})\s*$/i)?.[1] || "0", 10);
+    const total = parseInt(description.match(/(\d{1,2})\s*(?:\/|DE)\s*(\d{1,2})\s*$/i)?.[2] || "0", 10);
+    if (total > 1 && current <= total && current >= 1 && total <= 72) {
+      const cleaned = endMatch[1].trim();
+      return cleaned || null;
+    }
+  }
+  return null;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -473,23 +501,119 @@ async function processAIResponse(
       .delete()
       .eq("statement_id", statementId);
 
-    // Fetch known aliases for these descriptions
-    const uniqueDescriptions = [...new Set(transactions.map((t: any) => t.description).filter(Boolean))];
-    const { data: knownData, error: knownError } = await adminClient
-      .from("transactions")
-      .select("description, alias")
-      .in("description", uniqueDescriptions)
-      .not("alias", "is", null);
+    // ══════════════════════════════════════════════════════════════════
+    // REUSE: Carry over aliases AND assignments from previous imports
+    // ══════════════════════════════════════════════════════════════════
 
-    if (knownError) {
-      console.warn("Could not fetch known aliases:", knownError);
+    const uniqueDescriptions = [...new Set(transactions.map((t: any) => t.description).filter(Boolean))];
+
+    // ── Step 1: Fetch known aliases AND previous transaction IDs by exact description match ──
+    // We look for ANY previous transaction (from other statements) that has an alias or assignments
+    const aliasMap = new Map<string, string>();
+    const exactMatchPrevTxMap = new Map<string, string>(); // description → previous transaction ID (for assignment copy)
+
+    // Query in batches of 50 to avoid URL length limits
+    for (let i = 0; i < uniqueDescriptions.length; i += 50) {
+      const batch = uniqueDescriptions.slice(i, i + 50);
+
+      // Fetch previous transactions with same description that have alias OR assignments
+      const { data: prevTxBatch, error: prevErr } = await adminClient
+        .from("transactions")
+        .select("id, description, alias, transaction_assignments(user_id, share_amount)")
+        .neq("statement_id", statementId)
+        .in("description", batch)
+        .order("created_at", { ascending: false });
+
+      if (prevErr) {
+        console.warn("Could not fetch previous transactions for reuse:", prevErr);
+        continue;
+      }
+
+      if (prevTxBatch) {
+        for (const row of prevTxBatch) {
+          // Carry alias (first match wins since ordered by most recent)
+          if (row.alias && !aliasMap.has(row.description)) {
+            aliasMap.set(row.description, row.alias);
+          }
+          // Carry assignment reference (only if it has assignments and we haven't found one yet)
+          const assigns = (row as any).transaction_assignments;
+          if (assigns && assigns.length > 0 && !exactMatchPrevTxMap.has(row.description)) {
+            exactMatchPrevTxMap.set(row.description, row.id);
+          }
+        }
+      }
     }
 
-    const aliasMap = new Map<string, string>();
-    if (knownData) {
-      for (const row of knownData) {
-        if (row.alias) {
-          aliasMap.set(row.description, row.alias);
+    if (aliasMap.size > 0) {
+      console.log(`[Reuse] Found ${aliasMap.size} alias(es) from exact description match`);
+    }
+    if (exactMatchPrevTxMap.size > 0) {
+      console.log(`[Reuse] Found ${exactMatchPrevTxMap.size} previous assignment(s) from exact description match`);
+    }
+
+    // ── Step 2: For installments without alias, try matching by normalized description ──
+    // Build a map of normalized installment descriptions that still need aliases
+    const installmentNormMap = new Map<string, string[]>(); // normalizedDesc → [originalDesc, ...]
+    for (const t of transactions) {
+      const desc = t.description || "";
+      if (aliasMap.has(desc)) continue; // Already has alias from exact match
+      const normalized = normalizeInstallmentDesc(desc);
+      if (normalized) {
+        if (!installmentNormMap.has(normalized)) installmentNormMap.set(normalized, []);
+        installmentNormMap.get(normalized)!.push(desc);
+      }
+    }
+
+    // Query previous installments by normalized base description to find aliases
+    if (installmentNormMap.size > 0) {
+      const normalizedBases = [...installmentNormMap.keys()];
+      // Search for transactions whose description starts with any of the normalized bases and have alias
+      for (const base of normalizedBases) {
+        const { data: prevData } = await adminClient
+          .from("transactions")
+          .select("description, alias")
+          .ilike("description", `${base}%`)
+          .not("alias", "is", null)
+          .limit(5);
+
+        if (prevData && prevData.length > 0) {
+          // Use the first alias found (they should all be the same for the same purchase)
+          const foundAlias = prevData[0].alias;
+          const originalDescs = installmentNormMap.get(base) || [];
+          for (const origDesc of originalDescs) {
+            if (!aliasMap.has(origDesc)) {
+              aliasMap.set(origDesc, foundAlias);
+              console.log(`[Installment alias] "${origDesc}" → "${foundAlias}" (from normalized base "${base}")`);
+            }
+          }
+        }
+      }
+    }
+
+    // ── Step 3: Build map of normalized installment descriptions → previous transaction IDs ──
+    // This will be used after insert to copy transaction_assignments
+    const installmentPrevTxMap = new Map<string, string>(); // normalizedDesc → previous transaction ID
+    if (installmentNormMap.size > 0) {
+      const normalizedBases = [...installmentNormMap.keys()];
+      for (const base of normalizedBases) {
+        // Find the most recent previous transaction matching this installment base
+        const { data: prevTxData } = await adminClient
+          .from("transactions")
+          .select("id, description, statement_id")
+          .neq("statement_id", statementId)
+          .ilike("description", `${base}%`)
+          .order("created_at", { ascending: false })
+          .limit(5);
+
+        if (prevTxData && prevTxData.length > 0) {
+          // Pick the first one that is actually an installment of the same group
+          for (const prev of prevTxData) {
+            const prevNorm = normalizeInstallmentDesc(prev.description);
+            if (prevNorm && prevNorm.toUpperCase() === base.toUpperCase()) {
+              installmentPrevTxMap.set(base, prev.id);
+              break;
+            }
+          }
         }
       }
     }
@@ -511,12 +635,17 @@ async function processAIResponse(
         type: type === "refund" ? "purchase" : type, // store as purchase with negative amount
         is_reviewed: false,
         card_holder: t.card_holder || null,
+        _normalized_base: normalizeInstallmentDesc(t.description) || null, // temp field, not saved
       };
     });
 
-    const { error: insertError } = await adminClient
+    // Strip the temp _normalized_base field before inserting
+    const cleanTransactions = transactionsToInsert.map(({ _normalized_base, ...rest }: any) => rest);
+
+    const { data: insertedData, error: insertError } = await adminClient
       .from("transactions")
-      .insert(transactionsToInsert);
+      .insert(cleanTransactions)
+      .select("id, description");
 
     if (insertError) {
       console.error("Insert error:", insertError);
@@ -533,6 +662,61 @@ async function processAIResponse(
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         }
       );
+    }
+
+    // ── Step 4: Copy transaction_assignments from previous transactions ──
+    // Priority: exact description match > installment normalized match
+    let totalAssignmentsCopied = 0;
+    if (insertedData && (exactMatchPrevTxMap.size > 0 || installmentPrevTxMap.size > 0)) {
+      const handledTxIds = new Set<string>(); // avoid duplicating assignments
+
+      for (const newTx of insertedData) {
+        if (handledTxIds.has(newTx.id)) continue;
+
+        // Try exact description match first (higher priority)
+        let prevTxId = exactMatchPrevTxMap.get(newTx.description);
+        let matchSource = "exact";
+
+        // Fallback to installment normalized match
+        if (!prevTxId) {
+          const normalized = normalizeInstallmentDesc(newTx.description);
+          if (normalized) {
+            prevTxId = installmentPrevTxMap.get(normalized);
+            matchSource = "installment";
+          }
+        }
+
+        if (!prevTxId) continue;
+
+        // Fetch assignments from the previous transaction
+        const { data: prevAssignments } = await adminClient
+          .from("transaction_assignments")
+          .select("user_id, share_amount")
+          .eq("transaction_id", prevTxId);
+
+        if (prevAssignments && prevAssignments.length > 0) {
+          const newAssignments = prevAssignments.map((a: any) => ({
+            transaction_id: newTx.id,
+            user_id: a.user_id,
+            share_amount: a.share_amount,
+          }));
+
+          const { error: assignError } = await adminClient
+            .from("transaction_assignments")
+            .insert(newAssignments);
+
+          if (assignError) {
+            console.warn(`Failed to copy assignments for "${newTx.description}":`, assignError);
+          } else {
+            totalAssignmentsCopied += newAssignments.length;
+            handledTxIds.add(newTx.id);
+            console.log(`[Reuse ${matchSource}] Copied ${newAssignments.length} assignment(s) for "${newTx.description}"`);
+          }
+        }
+      }
+      if (totalAssignmentsCopied > 0) {
+        console.log(`[Reuse] Total: ${totalAssignmentsCopied} assignment(s) carried over from previous imports`);
+      }
     }
 
     // Update statement status to completed with totals
@@ -559,6 +743,9 @@ async function processAIResponse(
       }
     }
 
+    // Count how many new transactions got aliases from reuse
+    const reusedAliasCount = transactionsToInsert.filter((t: any) => t.alias).length;
+
     return new Response(
       JSON.stringify({
         success: true,
@@ -566,6 +753,8 @@ async function processAIResponse(
         total_fatura: totalFatura,
         previous_balance: saldoAnterior,
         interest_rate: taxaJurosMensal,
+        reused_aliases: reusedAliasCount,
+        reused_assignments: totalAssignmentsCopied,
         transactions: transactionsToInsert,
       }),
       {

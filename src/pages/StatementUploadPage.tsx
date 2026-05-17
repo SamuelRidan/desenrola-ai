@@ -144,13 +144,24 @@ export default function StatementUploadPage() {
       setProgress(100);
       setProcessingStep("Concluído!");
 
+      const reusedParts: string[] = [];
+      if (parseResult.reused_aliases > 0) {
+        reusedParts.push(`${parseResult.reused_aliases} apelido(s)`);
+      }
+      if (parseResult.reused_assignments > 0) {
+        reusedParts.push(`${parseResult.reused_assignments} responsável(is)`);
+      }
+      const reusedMsg = reusedParts.length > 0
+        ? ` Reaproveitados: ${reusedParts.join(" e ")}.`
+        : "";
+
       if (parseResult.interest_rate) {
         toast.success(
-          `Fatura processada! ${parseResult.count} lançamentos importados. Taxa de juros (${parseResult.interest_rate}%) atualizada no cartão.`
+          `Fatura processada! ${parseResult.count} lançamentos importados. Taxa de juros (${parseResult.interest_rate}%) atualizada.${reusedMsg}`
         );
       } else {
         toast.success(
-          `Fatura processada! ${parseResult.count} lançamentos importados.`
+          `Fatura processada! ${parseResult.count} lançamentos importados.${reusedMsg}`
         );
       }
       queryClient.invalidateQueries({ queryKey: ["statements"] });
