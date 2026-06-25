@@ -48,9 +48,13 @@ REGRAS PARA CAPTURA DO RESPONSÁVEL:
 ═══════════════════════════════════════
 REGRAS DE EXTRAÇÃO DE TRANSAÇÕES
 ═══════════════════════════════════════
+
+⚠️ REGRA FUNDAMENTAL: EXTRAIA **ABSOLUTAMENTE TODOS** OS LANÇAMENTOS ⚠️
+É OBRIGATÓRIO extrair cada linha de lançamento que apareça na fatura. NÃO omita NENHUM lançamento, independente do valor (mesmo R$ 0,01). A contagem de lançamentos extraídos DEVE corresponder exatamente à contagem de linhas na fatura.
+
 EXTRAIA APENAS transações que aparecem na LISTA DE TRANSAÇÕES/LANÇAMENTOS:
 ✅ Compras nacionais e internacionais (valor em REAIS)
-✅ Parcelas individuais de compras parceladas
+✅ Parcelas individuais de compras parceladas (CADA parcela é um lançamento separado)
 ✅ Assinaturas (streaming, apps, etc.)
 ✅ Seguros e anuidade do cartão
 ✅ Juros rotativos / juros de financiamento (lançamento individual na lista de transações)
@@ -58,6 +62,7 @@ EXTRAIA APENAS transações que aparecem na LISTA DE TRANSAÇÕES/LANÇAMENTOS:
 ✅ Multa por atraso (lançamento individual)
 ✅ Saques / empréstimos no cartão
 ✅ Estornos / devoluções / créditos (valor NEGATIVO — use amount negativo, ex: -150.00)
+✅ Lançamentos de TODAS as pessoas/titulares/dependentes do cartão
 
 NÃO EXTRAIA como transações:
 ❌ "Pagamento recebido" / "Pagamento em DD/MM" — estes são pagamentos da fatura ANTERIOR, já refletidos no saldo financiado
@@ -72,6 +77,7 @@ REGRAS ANTI-DUPLICAÇÃO:
 1. Juros e IOF: extraia APENAS da lista de transações, NUNCA do resumo.
 2. Se o mesmo valor aparecer no resumo E na lista de transações, extraia APENAS da lista.
 3. NUNCA extraia subtotais como "Total de compras", "Total de encargos".
+4. Se houver lançamentos LEGÍTIMOS repetidos (mesma loja, mesmo valor, mesmo dia), extraia TODOS eles — NÃO descarte como duplicata.
 
 ═══════════════════════════════════════
 VALIDAÇÃO OBRIGATÓRIA
@@ -82,7 +88,17 @@ Total = Saldo financiado + Juros + IOF + Compras
 Antes de responder, VALIDE:
 1. Localize o "TOTAL A PAGAR" no documento.
 2. Calcule: saldo_anterior + soma das transações extraídas ≈ Total a pagar
-3. Se houver discrepância > 1%, revise. Provavelmente você incluiu pagamentos/créditos indevidos ou errou o saldo_anterior.
+3. Se houver discrepância > 1%, revise. Provavelmente você OMITIU lançamentos ou incluiu pagamentos/créditos indevidos.
+4. CONTE o número de lançamentos no documento e compare com o número de transações extraídas. Se faltam transações, REVISE e extraia os faltantes.
+
+═══════════════════════════════════════
+EXTRAÇÃO DA TAXA DE JUROS
+═══════════════════════════════════════
+Se a fatura contiver informações sobre taxa de juros mensal (ex: "Taxa de juros mensal: 14,90%", "CET mensal: 16,50%", "Juros rotativos: 14,90% a.m."):
+- Extraia o valor percentual MENSAL como número (ex: 14.90 para 14,90%)
+- Use o campo "taxa_juros_mensal" no JSON
+- Se houver mais de uma taxa, use a taxa de juros rotativos/financiamento
+- Se não encontrar nenhuma taxa, retorne null
 
 ═══════════════════════════════════════
 FORMATO DE RESPOSTA
@@ -110,29 +126,20 @@ Categorias válidas: "Alimentação", "Transporte", "Compras", "Saúde", "Lazer"
 Tipos válidos: "purchase" (compras/débitos — valor positivo), "interest" (juros/IOF/multa/encargos — valor positivo), "refund" (estornos/devoluções — valor NEGATIVO)
 
 ATENÇÃO: NÃO use type "payment". Pagamentos da fatura anterior já estão refletidos no saldo_anterior.
-Se não souber a data exata de um lançamento, use o primeiro dia do mês da fatura.
+Se não souber a data exata de um lançamento, use o primeiro dia do mês da fatura.`;
 
-═══════════════════════════════════════
-EXTRAÇÃO DA TAXA DE JUROS
-═══════════════════════════════════════
-PROCURE no documento informações sobre a taxa de juros mensal cobrada pelo cartão. Estas geralmente aparecem em seções como:
-- "Encargos rotativos", "Taxa de juros", "CET mensal", "Taxa de financiamento"
-- "Juros remuneratórios", "Taxa mensal"
-- Exemplo: "Taxa de juros mensal: 14,90%" → retorne 14.90
-- Exemplo: "Taxa rotativo: 15,99% a.m." → retorne 15.99
+const USER_MESSAGE = `Analise esta fatura de cartão de crédito e extraia ABSOLUTAMENTE TODOS os lançamentos. 
 
-Se encontrar múltiplas taxas de juros (rotativo, parcelado, etc.), use a TAXA DO CRÉDITO ROTATIVO (maior taxa, geralmente).
-Se NÃO encontrar taxa de juros no documento, retorne null para taxa_juros_mensal.
+ATENÇÃO: É OBRIGATÓRIO extrair CADA lançamento individual que aparece na fatura, sem omitir nenhum. Isso inclui lançamentos de TODOS os titulares e dependentes do cartão.
 
-IMPORTANTE: O valor deve ser a taxa PERCENTUAL mensal (ex: 14.90 para 14,90% ao mês). NÃO converta para decimal.`;
+Se a fatura tiver seções separadas por responsável (titular/dependente), identifique o card_holder de cada seção e atribua corretamente a cada lançamento.
 
-const USER_MESSAGE = "Extraia todos os lançamentos desta fatura de cartão de crédito. IMPORTANTE: (1) Use o SALDO FINANCIADO como saldo_anterior (fatura anterior - pagamento), NÃO o valor total da fatura anterior. (2) NÃO inclua pagamentos da fatura anterior nem créditos de rotativo como transações. (3) Inclua APENAS compras e juros/IOF individuais da lista de transações.";
+Retorne o JSON completo conforme o formato especificado nas instruções.`;
 
 /**
  * Normalizes an installment description by stripping the installment suffix.
  * E.g. "AMAZON PARC 03/12" → "AMAZON"
  *      "Mp *37551516silva - Parcela 1/10" → "Mp *37551516silva"
- *      "LOJA VIRTUAL 02/05" → "LOJA VIRTUAL"
  * Returns null if the description is NOT an installment.
  */
 function normalizeInstallmentDesc(description: string): string | null {
@@ -140,16 +147,16 @@ function normalizeInstallmentDesc(description: string): string | null {
   const match = description.match(/^(.*?)\s*[-–]?\s*\bPARC(?:ELA)?\.?\s*\d{1,2}\s*(?:\/|DE)\s*\d{1,2}\b(.*)$/i);
   if (match) {
     const cleaned = (match[1] + " " + match[2]).replace(/\s+/g, " ").trim();
-    return cleaned || null;
+    return cleaned && cleaned.length >= 8 ? cleaned : null;
   }
-  // 2. Fallback: XX/YY at the end
-  const endMatch = description.match(/^(.*?)\s*[-–]?\s*\d{1,2}\s*(?:\/|DE)\s*\d{1,2}\s*$/i);
+  // 2. Fallback: XX/YY at the end (only if it looks like installments, not dates)
+  const endMatch = description.match(/^(.*?)\s*[-–]?\s*(\d{1,2})\s*(?:\/|DE)\s*(\d{1,2})\s*$/i);
   if (endMatch) {
-    const current = parseInt(description.match(/(\d{1,2})\s*(?:\/|DE)\s*(\d{1,2})\s*$/i)?.[1] || "0", 10);
-    const total = parseInt(description.match(/(\d{1,2})\s*(?:\/|DE)\s*(\d{1,2})\s*$/i)?.[2] || "0", 10);
+    const current = parseInt(endMatch[2], 10);
+    const total = parseInt(endMatch[3], 10);
     if (total > 1 && current <= total && current >= 1 && total <= 72) {
       const cleaned = endMatch[1].trim();
-      return cleaned || null;
+      return cleaned && cleaned.length >= 8 ? cleaned : null;
     }
   }
   return null;
@@ -254,8 +261,14 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Read file content as text
-    let fileContent = "";
+    // Gemini API configuration for reliable extraction
+    const GEMINI_MODEL = "gemini-3.1-flash-lite-preview";
+    const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${geminiApiKey}`;
+    const generationConfig = {
+      temperature: 0,
+    };
+
+    // Read file content
     const fileName = file_path.toLowerCase();
 
     if (fileName.endsWith(".pdf")) {
@@ -269,26 +282,23 @@ Deno.serve(async (req) => {
         binary += String.fromCharCode.apply(null, Array.from(chunk));
       }
       const base64 = btoa(binary);
-      fileContent = `[PDF file content in base64 - the AI model will process this as a document]`;
 
       // Use multimodal AI call for PDF
-      const aiResponse = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=${geminiApiKey}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-            contents: [{
-              role: "user",
-              parts: [
-                { text: USER_MESSAGE },
-                { inlineData: { mimeType: "application/pdf", data: base64 } }
-              ]
-            }]
-          }),
-        }
-      );
+      const aiResponse = await fetch(GEMINI_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+          generationConfig,
+          contents: [{
+            role: "user",
+            parts: [
+              { text: USER_MESSAGE },
+              { inlineData: { mimeType: "application/pdf", data: base64 } }
+            ]
+          }]
+        }),
+      });
 
       if (!aiResponse.ok) {
         const errText = await aiResponse.text();
@@ -331,24 +341,22 @@ Deno.serve(async (req) => {
       );
     } else {
       // For text/CSV files
-      fileContent = await fileData.text();
+      const fileContent = await fileData.text();
 
-      const aiResponse = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=${geminiApiKey}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-            contents: [{
-              role: "user",
-              parts: [
-                { text: `${USER_MESSAGE}\n\n${fileContent}` }
-              ]
-            }]
-          }),
-        }
-      );
+      const aiResponse = await fetch(GEMINI_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+          generationConfig,
+          contents: [{
+            role: "user",
+            parts: [
+              { text: `${USER_MESSAGE}\n\n${fileContent}` }
+            ]
+          }]
+        }),
+      });
 
       if (!aiResponse.ok) {
         const errText = await aiResponse.text();
@@ -462,21 +470,42 @@ async function processAIResponse(
       );
     }
 
-    // ── Deduplication: remove exact duplicates (same description + same amount + same date + same type) ──
-    const seen = new Set<string>();
+    console.log(`[parse-statement] AI returned ${transactions.length} transactions`);
+
+    // —— Deduplication: remove only TRUE duplicates (AI hallucinated repeats) ——
+    // We allow legitimate repeated transactions (same store/amount/date) by tracking
+    // how many times each key appears in the original list vs how many we've kept.
+    const keyCount = new Map<string, number>();
+    const keptCount = new Map<string, number>();
+    
+    for (const t of transactions) {
+      const key = `${t.date}|${(t.description || "").trim().toUpperCase()}|${Math.abs(Number(t.amount)).toFixed(2)}|${t.type || "purchase"}|${(t.card_holder || "").toUpperCase()}`;
+      keyCount.set(key, (keyCount.get(key) || 0) + 1);
+    }
+
+    // Only deduplicate if the same key appears 3+ times (very likely AI hallucination)
+    // Keep up to 2 identical transactions (legitimate repeats do happen)
+    const MAX_IDENTICAL = 2;
     const deduplicated: any[] = [];
     for (const t of transactions) {
-      const key = `${t.date}|${(t.description || "").trim().toUpperCase()}|${Math.abs(Number(t.amount)).toFixed(2)}|${t.type || "purchase"}`;
-      if (!seen.has(key)) {
-        seen.add(key);
+      const key = `${t.date}|${(t.description || "").trim().toUpperCase()}|${Math.abs(Number(t.amount)).toFixed(2)}|${t.type || "purchase"}|${(t.card_holder || "").toUpperCase()}`;
+      const total = keyCount.get(key) || 0;
+      const kept = keptCount.get(key) || 0;
+      
+      if (total <= MAX_IDENTICAL || kept < MAX_IDENTICAL) {
         deduplicated.push(t);
+        keptCount.set(key, kept + 1);
       } else {
-        console.log("Removed duplicate:", key);
+        console.log(`[Dedup] Removed likely AI duplicate: ${key}`);
       }
+    }
+    
+    if (deduplicated.length < transactions.length) {
+      console.log(`[Dedup] Removed ${transactions.length - deduplicated.length} likely AI duplicates, kept ${deduplicated.length}`);
     }
     transactions = deduplicated;
 
-    // ── Validation: check saldo_anterior + transactions ≈ total_fatura ──
+    // —— Validation: check saldo_anterior + transactions ≈ total_fatura ——
     if (totalFatura != null && totalFatura > 0) {
       let sumPurchases = 0;
       let sumInterest = 0;
@@ -501,27 +530,26 @@ async function processAIResponse(
       .delete()
       .eq("statement_id", statementId);
 
-    // ══════════════════════════════════════════════════════════════════
-    // REUSE: Carry over aliases AND assignments from previous imports
-    // ══════════════════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════════════════════
+    // REUSE: Carry over aliases from previous imports
+    // ══════════════════════════════════════════════════════════════════════
 
     const uniqueDescriptions = [...new Set(transactions.map((t: any) => t.description).filter(Boolean))];
 
-    // ── Step 1: Fetch known aliases AND previous transaction IDs by exact description match ──
-    // We look for ANY previous transaction (from other statements) that has an alias or assignments
+    // —— Step 1: Fetch known aliases from previous transactions by exact description match ——
     const aliasMap = new Map<string, string>();
-    const exactMatchPrevTxMap = new Map<string, string>(); // description → previous transaction ID (for assignment copy)
 
     // Query in batches of 50 to avoid URL length limits
     for (let i = 0; i < uniqueDescriptions.length; i += 50) {
       const batch = uniqueDescriptions.slice(i, i + 50);
 
-      // Fetch previous transactions with same description that have alias OR assignments
+      // Fetch previous transactions with same description that have alias
       const { data: prevTxBatch, error: prevErr } = await adminClient
         .from("transactions")
-        .select("id, description, alias, transaction_assignments(user_id, share_amount)")
+        .select("description, alias")
         .neq("statement_id", statementId)
         .in("description", batch)
+        .not("alias", "is", null)
         .order("created_at", { ascending: false });
 
       if (prevErr) {
@@ -535,11 +563,6 @@ async function processAIResponse(
           if (row.alias && !aliasMap.has(row.description)) {
             aliasMap.set(row.description, row.alias);
           }
-          // Carry assignment reference (only if it has assignments and we haven't found one yet)
-          const assigns = (row as any).transaction_assignments;
-          if (assigns && assigns.length > 0 && !exactMatchPrevTxMap.has(row.description)) {
-            exactMatchPrevTxMap.set(row.description, row.id);
-          }
         }
       }
     }
@@ -547,11 +570,8 @@ async function processAIResponse(
     if (aliasMap.size > 0) {
       console.log(`[Reuse] Found ${aliasMap.size} alias(es) from exact description match`);
     }
-    if (exactMatchPrevTxMap.size > 0) {
-      console.log(`[Reuse] Found ${exactMatchPrevTxMap.size} previous assignment(s) from exact description match`);
-    }
 
-    // ── Step 2: For installments without alias, try matching by normalized description ──
+    // —— Step 2: For installments without alias, try matching by normalized description ——
     // Build a map of normalized installment descriptions that still need aliases
     const installmentNormMap = new Map<string, string[]>(); // normalizedDesc → [originalDesc, ...]
     for (const t of transactions) {
@@ -590,34 +610,6 @@ async function processAIResponse(
       }
     }
 
-    // ── Step 3: Build map of normalized installment descriptions → previous transaction IDs ──
-    // This will be used after insert to copy transaction_assignments
-    const installmentPrevTxMap = new Map<string, string>(); // normalizedDesc → previous transaction ID
-    if (installmentNormMap.size > 0) {
-      const normalizedBases = [...installmentNormMap.keys()];
-      for (const base of normalizedBases) {
-        // Find the most recent previous transaction matching this installment base
-        const { data: prevTxData } = await adminClient
-          .from("transactions")
-          .select("id, description, statement_id")
-          .neq("statement_id", statementId)
-          .ilike("description", `${base}%`)
-          .order("created_at", { ascending: false })
-          .limit(5);
-
-        if (prevTxData && prevTxData.length > 0) {
-          // Pick the first one that is actually an installment of the same group
-          for (const prev of prevTxData) {
-            const prevNorm = normalizeInstallmentDesc(prev.description);
-            if (prevNorm && prevNorm.toUpperCase() === base.toUpperCase()) {
-              installmentPrevTxMap.set(base, prev.id);
-              break;
-            }
-          }
-        }
-      }
-    }
-
     // Insert transactions
     const validTypes = ["purchase", "payment", "interest", "refund"];
     const transactionsToInsert = transactions.map((t: any) => {
@@ -635,16 +627,14 @@ async function processAIResponse(
         type: type === "refund" ? "purchase" : type, // store as purchase with negative amount
         is_reviewed: false,
         card_holder: t.card_holder || null,
-        _normalized_base: normalizeInstallmentDesc(t.description) || null, // temp field, not saved
       };
     });
 
-    // Strip the temp _normalized_base field before inserting
-    const cleanTransactions = transactionsToInsert.map(({ _normalized_base, ...rest }: any) => rest);
+    console.log(`[parse-statement] Inserting ${transactionsToInsert.length} transactions`);
 
     const { data: insertedData, error: insertError } = await adminClient
       .from("transactions")
-      .insert(cleanTransactions)
+      .insert(transactionsToInsert)
       .select("id, description");
 
     if (insertError) {
@@ -662,61 +652,6 @@ async function processAIResponse(
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         }
       );
-    }
-
-    // ── Step 4: Copy transaction_assignments from previous transactions ──
-    // Priority: exact description match > installment normalized match
-    let totalAssignmentsCopied = 0;
-    if (insertedData && (exactMatchPrevTxMap.size > 0 || installmentPrevTxMap.size > 0)) {
-      const handledTxIds = new Set<string>(); // avoid duplicating assignments
-
-      for (const newTx of insertedData) {
-        if (handledTxIds.has(newTx.id)) continue;
-
-        // Try exact description match first (higher priority)
-        let prevTxId = exactMatchPrevTxMap.get(newTx.description);
-        let matchSource = "exact";
-
-        // Fallback to installment normalized match
-        if (!prevTxId) {
-          const normalized = normalizeInstallmentDesc(newTx.description);
-          if (normalized) {
-            prevTxId = installmentPrevTxMap.get(normalized);
-            matchSource = "installment";
-          }
-        }
-
-        if (!prevTxId) continue;
-
-        // Fetch assignments from the previous transaction
-        const { data: prevAssignments } = await adminClient
-          .from("transaction_assignments")
-          .select("user_id, share_amount")
-          .eq("transaction_id", prevTxId);
-
-        if (prevAssignments && prevAssignments.length > 0) {
-          const newAssignments = prevAssignments.map((a: any) => ({
-            transaction_id: newTx.id,
-            user_id: a.user_id,
-            share_amount: a.share_amount,
-          }));
-
-          const { error: assignError } = await adminClient
-            .from("transaction_assignments")
-            .insert(newAssignments);
-
-          if (assignError) {
-            console.warn(`Failed to copy assignments for "${newTx.description}":`, assignError);
-          } else {
-            totalAssignmentsCopied += newAssignments.length;
-            handledTxIds.add(newTx.id);
-            console.log(`[Reuse ${matchSource}] Copied ${newAssignments.length} assignment(s) for "${newTx.description}"`);
-          }
-        }
-      }
-      if (totalAssignmentsCopied > 0) {
-        console.log(`[Reuse] Total: ${totalAssignmentsCopied} assignment(s) carried over from previous imports`);
-      }
     }
 
     // Update statement status to completed with totals
@@ -754,7 +689,7 @@ async function processAIResponse(
         previous_balance: saldoAnterior,
         interest_rate: taxaJurosMensal,
         reused_aliases: reusedAliasCount,
-        reused_assignments: totalAssignmentsCopied,
+        reused_assignments: 0,
         transactions: transactionsToInsert,
       }),
       {

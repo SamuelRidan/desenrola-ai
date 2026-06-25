@@ -144,15 +144,8 @@ export default function StatementUploadPage() {
       setProgress(100);
       setProcessingStep("Concluído!");
 
-      const reusedParts: string[] = [];
-      if (parseResult.reused_aliases > 0) {
-        reusedParts.push(`${parseResult.reused_aliases} apelido(s)`);
-      }
-      if (parseResult.reused_assignments > 0) {
-        reusedParts.push(`${parseResult.reused_assignments} responsável(is)`);
-      }
-      const reusedMsg = reusedParts.length > 0
-        ? ` Reaproveitados: ${reusedParts.join(" e ")}.`
+      const reusedMsg = parseResult.reused_aliases > 0
+        ? ` Reaproveitados: ${parseResult.reused_aliases} apelido(s).`
         : "";
 
       if (parseResult.interest_rate) {
