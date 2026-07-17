@@ -144,17 +144,13 @@ export default function StatementUploadPage() {
       setProgress(100);
       setProcessingStep("Concluído!");
 
-      const reusedMsg = parseResult.reused_aliases > 0
-        ? ` Reaproveitados: ${parseResult.reused_aliases} apelido(s).`
-        : "";
-
       if (parseResult.interest_rate) {
         toast.success(
-          `Fatura processada! ${parseResult.count} lançamentos importados. Taxa de juros (${parseResult.interest_rate}%) atualizada.${reusedMsg}`
+          `Fatura processada! ${parseResult.count} lançamentos importados. Taxa de juros (${parseResult.interest_rate}%) atualizada.`
         );
       } else {
         toast.success(
-          `Fatura processada! ${parseResult.count} lançamentos importados.${reusedMsg}`
+          `Fatura processada! ${parseResult.count} lançamentos importados.`
         );
       }
       queryClient.invalidateQueries({ queryKey: ["statements"] });

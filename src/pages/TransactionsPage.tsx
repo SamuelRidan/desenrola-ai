@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { Search, CheckCircle, Users, DollarSign, User, Plus, CreditCard, AlertTriangle, Wallet, Scissors, Receipt, X, UserPlus, Calendar, ChevronLeft, ChevronRight, Layers, UserCircle, Trash2, CalendarClock } from "lucide-react";
+import { Search, CheckCircle, Users, DollarSign, User, Plus, CreditCard, AlertTriangle, Wallet, Scissors, Receipt, X, UserPlus, Calendar, ChevronLeft, ChevronRight, Layers, UserCircle, Trash2, CalendarClock, History } from "lucide-react";
 
 const MONTH_NAMES = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 const MONTH_NAMES_FULL = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
@@ -17,6 +17,7 @@ import AssignTransactionDialog from "@/components/AssignTransactionDialog";
 import AddTransactionDialog from "@/components/AddTransactionDialog";
 import BulkAssignDialog from "@/components/BulkAssignDialog";
 import InstallmentModal, { parseInstallment } from "@/components/InstallmentModal";
+import RecoverAliasModal from "@/components/RecoverAliasModal";
 
 const USER_COLORS = [
   { bg: "bg-violet-500/15", text: "text-violet-600", border: "border-violet-500/25", ring: "ring-violet-500/20" },
@@ -63,6 +64,7 @@ export default function TransactionsPage() {
   const [aliasValue, setAliasValue] = useState("");
   const [deletingTxId, setDeletingTxId] = useState<string | null>(null);
   const [showInstallments, setShowInstallments] = useState(false);
+  const [recoverAliasTx, setRecoverAliasTx] = useState<{ id: string; description: string; statement_id: string; amount: number } | null>(null);
 
   const { data: statements } = useQuery({
     queryKey: ["statements-list"],
@@ -414,8 +416,8 @@ export default function TransactionsPage() {
                      </Button>
                   </div>
                 ) : (
-                  <div className="flex items-center gap-1 group/alias-mobile">
-                    <span className="text-xs text-muted-foreground truncate">{t.alias ? t.alias : <span className="opacity-40 italic">Sem apelido</span>}</span>
+                  <div className="flex items-center gap-1 group/alias-mobile flex-wrap">
+                    <span className="text-xs text-muted-foreground break-words">{t.alias ? t.alias : <span className="opacity-40 italic">Sem apelido</span>}</span>
                     <Button
                       variant="ghost"
                       size="icon"
@@ -476,8 +478,19 @@ export default function TransactionsPage() {
           </button>
         ) : null}
 
-        {/* Row 3: Actions */}
         <div className="flex items-center gap-1 pt-1 border-t border-border/50">
+          {parseInstallment(t.description || "") && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 px-2 text-[11px] flex-1 border-amber-300 text-amber-850 bg-amber-50/80 hover:bg-amber-100 hover:text-amber-900 flex items-center justify-center gap-1 font-semibold rounded-md shadow-sm shrink-0"
+              onClick={() => setRecoverAliasTx({ id: t.id, description: t.description, statement_id: t.statement_id, amount: Number(t.amount) })}
+              title="Recuperar histórico da fatura anterior"
+            >
+              <History className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+              Recuperar Histórico
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="sm"
@@ -1019,7 +1032,7 @@ export default function TransactionsPage() {
                   <th className="text-left p-3 font-medium text-muted-foreground whitespace-nowrap">Categoria</th>
                   <th className="text-left p-3 font-medium text-muted-foreground whitespace-nowrap">Atribuído a</th>
                   <th className="text-right p-3 font-medium text-muted-foreground whitespace-nowrap">Valor</th>
-                  <th className="text-center p-3 font-medium text-muted-foreground whitespace-nowrap w-28">Ações</th>
+                  <th className="text-center p-3 font-medium text-muted-foreground whitespace-nowrap w-44">Ações</th>
                 </tr>
               </thead>
               <tbody>
@@ -1161,11 +1174,23 @@ export default function TransactionsPage() {
                           {t.type === "payment" ? "- " : ""}R$ {Number(t.amount).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                         </td>
                         <td className="p-3">
-                          <div className="flex items-center justify-center gap-0.5 opacity-60 group-hover:opacity-100 transition-opacity">
+                          <div className="flex items-center justify-center gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
+                            {parseInstallment(t.description || "") && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-7 px-2 border-amber-300 text-amber-850 bg-amber-50/80 hover:bg-amber-100 hover:text-amber-900 flex items-center gap-1 font-semibold text-xs shadow-sm rounded-md shrink-0"
+                                onClick={() => setRecoverAliasTx({ id: t.id, description: t.description, statement_id: t.statement_id, amount: Number(t.amount) })}
+                                title="Recuperar histórico da fatura anterior"
+                              >
+                                <History className="w-3.5 h-3.5 text-amber-600" />
+                                Recuperar Histórico
+                              </Button>
+                            )}
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-7 w-7"
+                              className="h-7 w-7 shrink-0"
                               onClick={() => setAssignTx({ id: t.id, amount: Number(t.amount), description: t.alias || t.description })}
                               title="Atribuir usuário"
                             >
@@ -1174,7 +1199,7 @@ export default function TransactionsPage() {
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-7 w-7"
+                              className="h-7 w-7 shrink-0"
                               onClick={() => setAssignTx({ id: t.id, amount: Number(t.amount), description: t.alias || t.description })}
                               title="Dividir despesa"
                             >
@@ -1184,7 +1209,7 @@ export default function TransactionsPage() {
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                className="h-7 w-7 text-destructive/60 hover:text-destructive hover:bg-destructive/10"
+                                className="h-7 w-7 text-destructive/60 hover:text-destructive hover:bg-destructive/10 shrink-0"
                                 onClick={() => setDeletingTxId(t.id)}
                                 title="Excluir lançamento"
                               >
@@ -1287,6 +1312,13 @@ export default function TransactionsPage() {
           statementId={selectedStatement}
         />
       )}
+
+      <RecoverAliasModal
+        open={!!recoverAliasTx}
+        onOpenChange={(open) => { if (!open) setRecoverAliasTx(null); }}
+        transaction={recoverAliasTx}
+        profileMap={profileMap}
+      />
 
       {/* Delete confirmation dialog */}
       <AnimatePresence>

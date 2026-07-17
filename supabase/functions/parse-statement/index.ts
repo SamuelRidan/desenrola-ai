@@ -530,87 +530,7 @@ async function processAIResponse(
       .delete()
       .eq("statement_id", statementId);
 
-    // ══════════════════════════════════════════════════════════════════════
-    // REUSE: Carry over aliases from previous imports
-    // ══════════════════════════════════════════════════════════════════════
-
-    const uniqueDescriptions = [...new Set(transactions.map((t: any) => t.description).filter(Boolean))];
-
-    // —— Step 1: Fetch known aliases from previous transactions by exact description match ——
-    const aliasMap = new Map<string, string>();
-
-    // Query in batches of 50 to avoid URL length limits
-    for (let i = 0; i < uniqueDescriptions.length; i += 50) {
-      const batch = uniqueDescriptions.slice(i, i + 50);
-
-      // Fetch previous transactions with same description that have alias
-      const { data: prevTxBatch, error: prevErr } = await adminClient
-        .from("transactions")
-        .select("description, alias")
-        .neq("statement_id", statementId)
-        .in("description", batch)
-        .not("alias", "is", null)
-        .order("created_at", { ascending: false });
-
-      if (prevErr) {
-        console.warn("Could not fetch previous transactions for reuse:", prevErr);
-        continue;
-      }
-
-      if (prevTxBatch) {
-        for (const row of prevTxBatch) {
-          // Carry alias (first match wins since ordered by most recent)
-          if (row.alias && !aliasMap.has(row.description)) {
-            aliasMap.set(row.description, row.alias);
-          }
-        }
-      }
-    }
-
-    if (aliasMap.size > 0) {
-      console.log(`[Reuse] Found ${aliasMap.size} alias(es) from exact description match`);
-    }
-
-    // —— Step 2: For installments without alias, try matching by normalized description ——
-    // Build a map of normalized installment descriptions that still need aliases
-    const installmentNormMap = new Map<string, string[]>(); // normalizedDesc → [originalDesc, ...]
-    for (const t of transactions) {
-      const desc = t.description || "";
-      if (aliasMap.has(desc)) continue; // Already has alias from exact match
-      const normalized = normalizeInstallmentDesc(desc);
-      if (normalized) {
-        if (!installmentNormMap.has(normalized)) installmentNormMap.set(normalized, []);
-        installmentNormMap.get(normalized)!.push(desc);
-      }
-    }
-
-    // Query previous installments by normalized base description to find aliases
-    if (installmentNormMap.size > 0) {
-      const normalizedBases = [...installmentNormMap.keys()];
-      // Search for transactions whose description starts with any of the normalized bases and have alias
-      for (const base of normalizedBases) {
-        const { data: prevData } = await adminClient
-          .from("transactions")
-          .select("description, alias")
-          .ilike("description", `${base}%`)
-          .not("alias", "is", null)
-          .limit(5);
-
-        if (prevData && prevData.length > 0) {
-          // Use the first alias found (they should all be the same for the same purchase)
-          const foundAlias = prevData[0].alias;
-          const originalDescs = installmentNormMap.get(base) || [];
-          for (const origDesc of originalDescs) {
-            if (!aliasMap.has(origDesc)) {
-              aliasMap.set(origDesc, foundAlias);
-              console.log(`[Installment alias] "${origDesc}" → "${foundAlias}" (from normalized base "${base}")`);
-            }
-          }
-        }
-      }
-    }
-
-    // Insert transactions
+    // Insert transactions (aliases are not carried over — users set them manually)
     const validTypes = ["purchase", "payment", "interest", "refund"];
     const transactionsToInsert = transactions.map((t: any) => {
       const type = validTypes.includes(t.type) ? t.type : "purchase";
@@ -622,7 +542,7 @@ async function processAIResponse(
         date: t.date,
         description: t.description,
         amount,
-        alias: aliasMap.get(t.description) || null,
+        alias: null,
         category: t.category || null,
         type: type === "refund" ? "purchase" : type, // store as purchase with negative amount
         is_reviewed: false,
@@ -678,9 +598,6 @@ async function processAIResponse(
       }
     }
 
-    // Count how many new transactions got aliases from reuse
-    const reusedAliasCount = transactionsToInsert.filter((t: any) => t.alias).length;
-
     return new Response(
       JSON.stringify({
         success: true,
@@ -688,8 +605,6 @@ async function processAIResponse(
         total_fatura: totalFatura,
         previous_balance: saldoAnterior,
         interest_rate: taxaJurosMensal,
-        reused_aliases: reusedAliasCount,
-        reused_assignments: 0,
         transactions: transactionsToInsert,
       }),
       {
