@@ -4,7 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 import {
   CreditCard, LayoutDashboard, Upload, FileText, Users,
-  Receipt, Tag, LogOut, Menu, X, ChevronRight, Wallet
+  Receipt, Tag, LogOut, Menu, X, ChevronRight, Wallet, BarChart3
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
@@ -20,6 +20,7 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { label: "Painel", href: "/", icon: <LayoutDashboard className="w-5 h-5" />, roles: ["admin", "user"] },
+  { label: "Cockpit", href: "/cockpit", icon: <BarChart3 className="w-5 h-5" />, roles: ["admin"] },
   { label: "Cartões", href: "/cartoes", icon: <CreditCard className="w-5 h-5" />, roles: ["admin"] },
   { label: "Importar Fatura", href: "/importar", icon: <Upload className="w-5 h-5" />, roles: ["admin"] },
   { label: "Transações", href: "/transacoes", icon: <FileText className="w-5 h-5" />, roles: ["admin", "user"] },

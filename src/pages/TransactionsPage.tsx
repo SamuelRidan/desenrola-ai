@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { Search, CheckCircle, Users, DollarSign, User, Plus, CreditCard, AlertTriangle, Wallet, Scissors, Receipt, X, UserPlus, Calendar, ChevronLeft, ChevronRight, Layers, UserCircle, Trash2, CalendarClock, History } from "lucide-react";
+import { Search, CheckCircle, Users, DollarSign, User, Plus, CreditCard, AlertTriangle, Wallet, Scissors, Receipt, X, UserPlus, Calendar, ChevronLeft, ChevronRight, Layers, UserCircle, Trash2, CalendarClock, History, Tag, ClipboardList } from "lucide-react";
 
 const MONTH_NAMES = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 const MONTH_NAMES_FULL = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
@@ -65,6 +65,7 @@ export default function TransactionsPage() {
   const [deletingTxId, setDeletingTxId] = useState<string | null>(null);
   const [showInstallments, setShowInstallments] = useState(false);
   const [recoverAliasTx, setRecoverAliasTx] = useState<{ id: string; description: string; statement_id: string; amount: number } | null>(null);
+  const [selectedFillFilter, setSelectedFillFilter] = useState<"all" | "no-alias" | "no-assignment">("all");
 
   const { data: statements } = useQuery({
     queryKey: ["statements-list"],
@@ -227,6 +228,19 @@ export default function TransactionsPage() {
       );
     }
 
+    // Filter by fill status
+    if (selectedFillFilter === "no-alias") {
+      filtered = filtered.filter((t: any) => {
+        const type = t.type || "purchase";
+        return type !== "payment" && Number(t.amount) > 0 && !t.alias;
+      });
+    } else if (selectedFillFilter === "no-assignment") {
+      filtered = filtered.filter((t: any) => {
+        const type = t.type || "purchase";
+        return type !== "payment" && Number(t.amount) > 0 && (!t.transaction_assignments || t.transaction_assignments.length === 0);
+      });
+    }
+
     // Sort by card_holder (Responsável) and then assigned user (Atribuído a)
     return [...filtered].sort((a: any, b: any) => {
       // 1. Sort by card_holder
@@ -242,7 +256,7 @@ export default function TransactionsPage() {
       const assignedB = profileMap[idB] || idB;
       return assignedA.localeCompare(assignedB);
     });
-  }, [rawTransactions, selectedCardHolder, selectedAssignedUser, profileMap]);
+  }, [rawTransactions, selectedCardHolder, selectedAssignedUser, selectedFillFilter, profileMap]);
 
   // Selectable transactions (only purchases with positive amounts)
   const selectableTransactions = useMemo(() => {
@@ -252,6 +266,25 @@ export default function TransactionsPage() {
       return type !== "payment" && Number(t.amount) > 0;
     });
   }, [transactions]);
+
+  // Progress stats — count items needing attention (based on rawTransactions, ignoring filters)
+  const progressStats = useMemo(() => {
+    if (!rawTransactions) return { total: 0, withAlias: 0, withAssignment: 0, noAlias: 0, noAssignment: 0 };
+    const actionable = rawTransactions.filter((t: any) => {
+      const type = t.type || "purchase";
+      return type !== "payment" && Number(t.amount) > 0;
+    });
+    const total = actionable.length;
+    const withAlias = actionable.filter((t: any) => !!t.alias).length;
+    const withAssignment = actionable.filter((t: any) => t.transaction_assignments && t.transaction_assignments.length > 0).length;
+    return {
+      total,
+      withAlias,
+      withAssignment,
+      noAlias: total - withAlias,
+      noAssignment: total - withAssignment,
+    };
+  }, [rawTransactions]);
 
   const toggleTxSelection = useCallback((txId: string) => {
     setSelectedTxIds((prev) => {
@@ -478,45 +511,44 @@ export default function TransactionsPage() {
           </button>
         ) : null}
 
-        <div className="flex items-center gap-1 pt-1 border-t border-border/50">
+        <div className="grid grid-cols-2 gap-1.5 pt-2 border-t border-border/50">
           {parseInstallment(t.description || "") && (
             <Button
               variant="outline"
               size="sm"
-              className="h-9 px-2 text-[11px] flex-1 border-amber-300 text-amber-850 bg-amber-50/80 hover:bg-amber-100 hover:text-amber-900 flex items-center justify-center gap-1 font-semibold rounded-md shadow-sm shrink-0"
+              className="h-9 text-[11px] border-amber-300 bg-amber-50/80 hover:bg-amber-100 text-amber-800 flex items-center justify-center gap-1.5 font-semibold rounded-lg shadow-sm"
               onClick={() => setRecoverAliasTx({ id: t.id, description: t.description, statement_id: t.statement_id, amount: Number(t.amount) })}
-              title="Recuperar histórico da fatura anterior"
             >
               <History className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-              Recuperar Histórico
+              Recuperar
             </Button>
           )}
           <Button
             variant="ghost"
             size="sm"
-            className="h-9 px-3 text-xs flex-1"
+            className="h-9 text-xs flex items-center justify-center gap-1.5"
             onClick={() => setAssignTx({ id: t.id, amount: Number(t.amount), description: t.alias || t.description })}
           >
-            <User className="w-3.5 h-3.5 mr-1.5 text-primary" />
+            <User className="w-3.5 h-3.5 text-primary shrink-0" />
             Atribuir
           </Button>
           <Button
             variant="ghost"
             size="sm"
-            className="h-9 px-3 text-xs flex-1"
+            className="h-9 text-xs flex items-center justify-center gap-1.5"
             onClick={() => setAssignTx({ id: t.id, amount: Number(t.amount), description: t.alias || t.description })}
           >
-            <Scissors className="w-3.5 h-3.5 mr-1.5 text-primary" />
+            <Scissors className="w-3.5 h-3.5 text-primary shrink-0" />
             Dividir
           </Button>
           {role === "admin" && (
             <Button
               variant="ghost"
               size="sm"
-              className="h-9 px-3 text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
+              className="h-9 text-xs text-destructive hover:text-destructive hover:bg-destructive/10 flex items-center justify-center gap-1.5"
               onClick={() => setDeletingTxId(t.id)}
             >
-              <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+              <Trash2 className="w-3.5 h-3.5 shrink-0" />
               Excluir
             </Button>
           )}
@@ -997,7 +1029,7 @@ export default function TransactionsPage() {
       )}
 
       {/* Mobile: Card-based transaction list */}
-      <div className="md:hidden space-y-2.5">
+      <div className="md:hidden space-y-2.5 pb-36">
         {isLoading ? (
           <div className="p-8 text-center text-muted-foreground text-sm">Carregando...</div>
         ) : transactions && transactions.length > 0 ? (
@@ -1006,7 +1038,9 @@ export default function TransactionsPage() {
           <div className="p-8 text-center text-muted-foreground text-sm">
             {selectedStatement === "all"
               ? "Selecione uma fatura para ver os lançamentos"
-              : "Nenhuma transação encontrada"}
+              : selectedFillFilter !== "all" 
+                ? "Todos os lançamentos já estão preenchidos para este filtro! 🎉"
+                : "Nenhuma transação encontrada"}
           </div>
         )}
       </div>
@@ -1370,6 +1404,75 @@ export default function TransactionsPage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Mobile: Sticky Progress Bar */}
+      {rawTransactions && rawTransactions.length > 0 && progressStats.total > 0 && (
+        <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-card/95 backdrop-blur-md border-t border-border shadow-[0_-4px_20px_rgba(0,0,0,0.08)]">
+          <div className="px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+            {/* Progress bar */}
+            <div className="flex items-center justify-between text-[11px] text-muted-foreground mb-1.5">
+              <span className="font-medium">
+                {progressStats.withAlias}/{progressStats.total} com apelido · {progressStats.withAssignment}/{progressStats.total} atribuídos
+              </span>
+              <span className="font-semibold">
+                {progressStats.total > 0 ? Math.round(((progressStats.withAlias + progressStats.withAssignment) / (progressStats.total * 2)) * 100) : 0}%
+              </span>
+            </div>
+            <div className="h-1.5 rounded-full bg-muted overflow-hidden mb-3">
+              <div
+                className={`h-full rounded-full transition-all duration-500 ${
+                  ((progressStats.withAlias + progressStats.withAssignment) / (progressStats.total * 2)) > 0.8
+                    ? "bg-emerald-500"
+                    : ((progressStats.withAlias + progressStats.withAssignment) / (progressStats.total * 2)) > 0.4
+                      ? "bg-amber-500"
+                      : "bg-rose-500"
+                }`}
+                style={{ width: `${Math.round(((progressStats.withAlias + progressStats.withAssignment) / (progressStats.total * 2)) * 100)}%` }}
+              />
+            </div>
+
+            {/* Quick filter chips */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setSelectedFillFilter(selectedFillFilter === "no-alias" ? "all" : "no-alias")}
+                className={`flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium border transition-all ${
+                  selectedFillFilter === "no-alias"
+                    ? "border-amber-400 bg-amber-50 text-amber-800 shadow-sm"
+                    : "border-border bg-muted/40 text-muted-foreground active:bg-muted"
+                }`}
+              >
+                <Tag className="w-3.5 h-3.5 shrink-0" />
+                <span>Sem apelido</span>
+                <span className={`min-w-[20px] h-5 rounded-full text-[10px] font-bold flex items-center justify-center px-1.5 ${
+                  progressStats.noAlias > 0 
+                    ? selectedFillFilter === "no-alias" ? "bg-amber-200 text-amber-900" : "bg-amber-100 text-amber-700"
+                    : "bg-emerald-100 text-emerald-700"
+                }`}>
+                  {progressStats.noAlias}
+                </span>
+              </button>
+              <button
+                onClick={() => setSelectedFillFilter(selectedFillFilter === "no-assignment" ? "all" : "no-assignment")}
+                className={`flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium border transition-all ${
+                  selectedFillFilter === "no-assignment"
+                    ? "border-violet-400 bg-violet-50 text-violet-800 shadow-sm"
+                    : "border-border bg-muted/40 text-muted-foreground active:bg-muted"
+                }`}
+              >
+                <ClipboardList className="w-3.5 h-3.5 shrink-0" />
+                <span>Sem atribuição</span>
+                <span className={`min-w-[20px] h-5 rounded-full text-[10px] font-bold flex items-center justify-center px-1.5 ${
+                  progressStats.noAssignment > 0
+                    ? selectedFillFilter === "no-assignment" ? "bg-violet-200 text-violet-900" : "bg-violet-100 text-violet-700"
+                    : "bg-emerald-100 text-emerald-700"
+                }`}>
+                  {progressStats.noAssignment}
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
