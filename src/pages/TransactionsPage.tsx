@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
+import * as XLSX from "xlsx";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
@@ -7,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { Search, CheckCircle, Users, DollarSign, User, Plus, CreditCard, AlertTriangle, Wallet, Scissors, Receipt, X, UserPlus, Calendar, ChevronLeft, ChevronRight, Layers, UserCircle, Trash2, CalendarClock, History, Tag, ClipboardList } from "lucide-react";
+import { Search, CheckCircle, Users, DollarSign, User, Plus, CreditCard, AlertTriangle, Wallet, Scissors, Receipt, X, UserPlus, Calendar, ChevronLeft, ChevronRight, Layers, UserCircle, Trash2, CalendarClock, History, Tag, ClipboardList, Download, Pencil } from "lucide-react";
 
 const MONTH_NAMES = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 const MONTH_NAMES_FULL = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
@@ -66,6 +67,8 @@ export default function TransactionsPage() {
   const [showInstallments, setShowInstallments] = useState(false);
   const [recoverAliasTx, setRecoverAliasTx] = useState<{ id: string; description: string; statement_id: string; amount: number } | null>(null);
   const [selectedFillFilter, setSelectedFillFilter] = useState<"all" | "no-alias" | "no-assignment">("all");
+  const [editingAmountId, setEditingAmountId] = useState<string | null>(null);
+  const [amountValue, setAmountValue] = useState("");
 
   const { data: statements } = useQuery({
     queryKey: ["statements-list"],
@@ -173,6 +176,28 @@ export default function TransactionsPage() {
     },
     onError: () => toast.error("Erro ao atualizar apelido"),
   });
+
+  const updateAmount = useMutation({
+    mutationFn: async ({ id, amount }: { id: string; amount: number }) => {
+      const { error } = await supabase.from("transactions").update({ amount }).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["transactions"] });
+      setEditingAmountId(null);
+      toast.success("Valor atualizado");
+    },
+    onError: () => toast.error("Erro ao atualizar valor"),
+  });
+
+  const handleAmountSave = useCallback((id: string) => {
+    const parsed = parseFloat(amountValue.replace(/\./g, "").replace(",", "."));
+    if (isNaN(parsed)) {
+      toast.error("Valor inválido");
+      return;
+    }
+    updateAmount.mutate({ id, amount: parsed });
+  }, [amountValue, updateAmount]);
 
   const profileMap = useMemo(() => {
     const map: Record<string, string> = {};
@@ -335,6 +360,101 @@ export default function TransactionsPage() {
     }).length;
   }, [rawTransactions]);
 
+  // Export to Excel function
+  const exportToExcel = useCallback(() => {
+    if (!transactions || transactions.length === 0) {
+      toast.error("Nenhuma transação para exportar");
+      return;
+    }
+
+    // Get statement info for filename
+    const selectedStmt = statements?.find((s: any) => s.id === effectiveStatement);
+    const stmtLabel = selectedStmt
+      ? `${selectedStmt.credit_cards?.name || "Cartao"}_${MONTH_NAMES_FULL[(selectedStmt.month || 1) - 1]}_${selectedStmt.year}`
+      : "Todas_Faturas";
+
+    // Sheet 1: Lançamentos
+    const launchRows = transactions.map((t: any) => {
+      const type = t.type || "purchase";
+      const amt = Number(t.amount) || 0;
+      const typeLabel = type === "payment" ? "Pagamento" : type === "interest" ? "Juros" : amt < 0 ? "Estorno" : "Compra";
+      const assigns = t.transaction_assignments || [];
+      const assignedNames = assigns.map((a: any) => profileMap[a.user_id] || "Desconhecido").join(", ");
+      const assignedAmounts = assigns.map((a: any) => Number(a.share_amount) || 0);
+      const totalAssigned = assignedAmounts.reduce((s: number, v: number) => s + v, 0);
+
+      return {
+        "Data": new Date(t.date + "T00:00:00").toLocaleDateString("pt-BR"),
+        "Descrição": t.description || "",
+        "Apelido": t.alias || "",
+        "Responsável Cartão": t.card_holder || "",
+        "Tipo": typeLabel,
+        "Categoria": t.category || "",
+        "Atribuído a": assignedNames,
+        "Valor (R$)": amt,
+        "Valor Atribuído (R$)": totalAssigned > 0 ? totalAssigned : "",
+      };
+    });
+
+    // Sheet 2: Preenchimento
+    const fillRows = transactions
+      .filter((t: any) => {
+        const type = t.type || "purchase";
+        return type !== "payment" && Number(t.amount) > 0;
+      })
+      .map((t: any) => {
+        const hasAlias = !!t.alias;
+        const hasAssignment = t.transaction_assignments && t.transaction_assignments.length > 0;
+        const assigns = t.transaction_assignments || [];
+        const assignedNames = assigns.map((a: any) => profileMap[a.user_id] || "Desconhecido").join(", ");
+
+        return {
+          "Descrição": t.description || "",
+          "Apelido": t.alias || "⚠ SEM APELIDO",
+          "Responsável Cartão": t.card_holder || "",
+          "Atribuído a": hasAssignment ? assignedNames : "⚠ SEM ATRIBUIÇÃO",
+          "Valor (R$)": Number(t.amount) || 0,
+          "Status Apelido": hasAlias ? "✅ Preenchido" : "❌ Pendente",
+          "Status Atribuição": hasAssignment ? "✅ Preenchido" : "❌ Pendente",
+        };
+      });
+
+    const wb = XLSX.utils.book_new();
+
+    // Sheet 1
+    const ws1 = XLSX.utils.json_to_sheet(launchRows);
+    ws1["!cols"] = [
+      { wch: 12 }, // Data
+      { wch: 40 }, // Descrição
+      { wch: 30 }, // Apelido
+      { wch: 20 }, // Responsável Cartão
+      { wch: 12 }, // Tipo
+      { wch: 15 }, // Categoria
+      { wch: 30 }, // Atribuído a
+      { wch: 15 }, // Valor
+      { wch: 18 }, // Valor Atribuído
+    ];
+    XLSX.utils.book_append_sheet(wb, ws1, "Lançamentos");
+
+    // Sheet 2
+    if (fillRows.length > 0) {
+      const ws2 = XLSX.utils.json_to_sheet(fillRows);
+      ws2["!cols"] = [
+        { wch: 40 }, // Descrição
+        { wch: 30 }, // Apelido
+        { wch: 20 }, // Responsável Cartão
+        { wch: 30 }, // Atribuído a
+        { wch: 15 }, // Valor
+        { wch: 18 }, // Status Apelido
+        { wch: 18 }, // Status Atribuição
+      ];
+      XLSX.utils.book_append_sheet(wb, ws2, "Preenchimento");
+    }
+
+    const filename = `Transacoes_${stmtLabel}.xlsx`.replace(/\s+/g, "_");
+    XLSX.writeFile(wb, filename);
+    toast.success(`Exportado: ${filename}`);
+  }, [transactions, statements, effectiveStatement, profileMap]);
 
   const summary = useMemo(() => {
     if (!transactions || transactions.length === 0) return null;
@@ -473,9 +593,43 @@ export default function TransactionsPage() {
                 )}
               </div>
             </div>
-            <p className={`text-base font-heading font-bold whitespace-nowrap ${type === "payment" || Number(t.amount) < 0 ? "text-green-600" : type === "interest" ? "text-destructive" : ""}`}>
-              {type === "payment" ? "- " : ""}{Number(t.amount) < 0 ? "- " : ""}R$ {Math.abs(Number(t.amount)).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-            </p>
+            {editingAmountId === t.id ? (
+              <div className="flex items-center gap-1 min-w-[120px]">
+                <span className="text-xs text-muted-foreground">R$</span>
+                <Input
+                  value={amountValue}
+                  onChange={(e) => setAmountValue(e.target.value)}
+                  className="h-7 text-sm w-24 px-2 text-right font-bold"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleAmountSave(t.id);
+                    if (e.key === "Escape") setEditingAmountId(null);
+                  }}
+                />
+                <Button size="icon" variant="ghost" className="h-6 w-6 text-primary shrink-0" onClick={() => handleAmountSave(t.id)}>
+                  <CheckCircle className="h-4 w-4" />
+                </Button>
+                <Button size="icon" variant="ghost" className="h-6 w-6 text-muted-foreground shrink-0" onClick={() => setEditingAmountId(null)}>
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1">
+                <p className={`text-base font-heading font-bold whitespace-nowrap ${type === "payment" || Number(t.amount) < 0 ? "text-green-600" : type === "interest" ? "text-destructive" : ""}`}>
+                  {type === "payment" ? "- " : ""}{Number(t.amount) < 0 ? "- " : ""}R$ {Math.abs(Number(t.amount)).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                </p>
+                {role === "admin" && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-5 w-5 shrink-0 opacity-40 hover:opacity-100"
+                    onClick={() => { setEditingAmountId(t.id); setAmountValue(Math.abs(Number(t.amount)).toLocaleString("pt-BR", { minimumFractionDigits: 2 })); }}
+                  >
+                    <Pencil className="h-2.5 w-2.5" />
+                  </Button>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -571,6 +725,13 @@ export default function TransactionsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {transactions && transactions.length > 0 && (
+            <Button onClick={exportToExcel} size="sm" variant="outline" className="border-emerald-400 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800">
+              <Download className="w-4 h-4 mr-1" />
+              <span className="hidden sm:inline">Exportar Excel</span>
+              <span className="sm:hidden">Excel</span>
+            </Button>
+          )}
           {installmentCount > 0 && (
             <Button onClick={() => setShowInstallments(true)} size="sm" variant="outline" className="relative">
               <CalendarClock className="w-4 h-4 mr-1" />
@@ -1205,7 +1366,41 @@ export default function TransactionsPage() {
                           )}
                         </td>
                         <td className={`p-3 text-right font-heading font-semibold whitespace-nowrap ${t.type === "payment" ? "text-green-600" : t.type === "interest" ? "text-destructive" : ""}`}>
-                          {t.type === "payment" ? "- " : ""}R$ {Number(t.amount).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                          {editingAmountId === t.id ? (
+                            <div className="flex items-center justify-end gap-1">
+                              <span className="text-xs text-muted-foreground">R$</span>
+                              <Input
+                                value={amountValue}
+                                onChange={(e) => setAmountValue(e.target.value)}
+                                className="h-7 text-sm w-28 px-2 text-right font-bold"
+                                autoFocus
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") handleAmountSave(t.id);
+                                  if (e.key === "Escape") setEditingAmountId(null);
+                                }}
+                              />
+                              <Button size="icon" variant="ghost" className="h-6 w-6 text-primary shrink-0" onClick={() => handleAmountSave(t.id)}>
+                                <CheckCircle className="h-4 w-4" />
+                              </Button>
+                              <Button size="icon" variant="ghost" className="h-6 w-6 text-muted-foreground shrink-0" onClick={() => setEditingAmountId(null)}>
+                                <X className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-end gap-1 group/amount">
+                              <span>{t.type === "payment" ? "- " : ""}R$ {Number(t.amount).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
+                              {role === "admin" && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6 shrink-0 opacity-0 group-hover/amount:opacity-100 transition-opacity"
+                                  onClick={() => { setEditingAmountId(t.id); setAmountValue(Math.abs(Number(t.amount)).toLocaleString("pt-BR", { minimumFractionDigits: 2 })); }}
+                                >
+                                  <Pencil className="h-3 w-3" />
+                                </Button>
+                              )}
+                            </div>
+                          )}
                         </td>
                         <td className="p-3">
                           <div className="flex items-center justify-center gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
