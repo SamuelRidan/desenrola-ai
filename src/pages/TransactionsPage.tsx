@@ -1605,26 +1605,35 @@ export default function TransactionsPage() {
         <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-card/95 backdrop-blur-md border-t border-border shadow-[0_-4px_20px_rgba(0,0,0,0.08)]">
           <div className="px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
             {/* Progress bar */}
-            <div className="flex items-center justify-between text-[11px] text-muted-foreground mb-1.5">
-              <span className="font-medium">
-                {progressStats.withAlias}/{progressStats.total} com apelido · {progressStats.withAssignment}/{progressStats.total} atribuídos
-              </span>
-              <span className="font-semibold">
-                {progressStats.total > 0 ? Math.round(((progressStats.withAlias + progressStats.withAssignment) / (progressStats.total * 2)) * 100) : 0}%
-              </span>
-            </div>
-            <div className="h-1.5 rounded-full bg-muted overflow-hidden mb-3">
-              <div
-                className={`h-full rounded-full transition-all duration-500 ${
-                  ((progressStats.withAlias + progressStats.withAssignment) / (progressStats.total * 2)) > 0.8
-                    ? "bg-emerald-500"
-                    : ((progressStats.withAlias + progressStats.withAssignment) / (progressStats.total * 2)) > 0.4
-                      ? "bg-amber-500"
-                      : "bg-rose-500"
-                }`}
-                style={{ width: `${Math.round(((progressStats.withAlias + progressStats.withAssignment) / (progressStats.total * 2)) * 100)}%` }}
-              />
-            </div>
+            {(() => {
+              const unassignedPct = progressStats.total > 0
+                ? Math.round((progressStats.noAssignment / progressStats.total) * 100)
+                : 0;
+              return (
+                <>
+                  <div className="flex items-center justify-between text-[11px] text-muted-foreground mb-1.5">
+                    <span className="font-medium">
+                      {progressStats.noAssignment} de {progressStats.total} não atribuídos
+                    </span>
+                    <span className="font-semibold text-foreground">
+                      {unassignedPct}% sem atribuição
+                    </span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-muted overflow-hidden mb-3">
+                    <div
+                      className={`h-full rounded-full transition-all duration-500 ${
+                        unassignedPct === 0
+                          ? "bg-emerald-500"
+                          : unassignedPct > 50
+                            ? "bg-rose-500"
+                            : "bg-amber-500"
+                      }`}
+                      style={{ width: `${unassignedPct}%` }}
+                    />
+                  </div>
+                </>
+              );
+            })()}
 
             {/* Quick filter chips */}
             <div className="flex items-center gap-2">
