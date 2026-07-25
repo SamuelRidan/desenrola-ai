@@ -17,6 +17,8 @@ import AliasesPage from "./pages/AliasesPage";
 import UsersPage from "./pages/UsersPage";
 import PaymentsPage from "./pages/PaymentsPage";
 import UserDashboard from "./pages/UserDashboard";
+import PayoffPage from "./pages/PayoffPage";
+import PayoffPrintPage from "./pages/PayoffPrintPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -73,6 +75,8 @@ const App = () => (
             <Route path="/pagamentos" element={<ProtectedRoute><PaymentsPage /></ProtectedRoute>} />
             <Route path="/usuarios" element={<ProtectedRoute adminOnly><UsersPage /></ProtectedRoute>} />
             <Route path="/cockpit" element={<ProtectedRoute><UserDashboard /></ProtectedRoute>} />
+            <Route path="/quitacao" element={<ProtectedRoute><PayoffPage /></ProtectedRoute>} />
+            <Route path="/quitacao/impressao" element={<ProtectedRoute><PayoffPrintPage /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </AuthProvider>

@@ -14,6 +14,141 @@ export type Database = {
   }
   public: {
     Tables: {
+      debts: {
+        Row: {
+          id: string
+          user_id: string
+          card_id: string
+          raw_description: string
+          alias: string | null
+          total_amount: number
+          installments_total: number
+          installments_paid: number
+          first_due_month: string
+          status: string
+          notes: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          card_id: string
+          raw_description: string
+          alias?: string | null
+          total_amount: number
+          installments_total: number
+          installments_paid?: number
+          first_due_month: string
+          status?: string
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          card_id?: string
+          raw_description?: string
+          alias?: string | null
+          total_amount?: number
+          installments_total?: number
+          installments_paid?: number
+          first_due_month?: string
+          status?: string
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "debts_card_id_fkey"
+            columns: ["card_id"]
+            isOneToOne: false
+            referencedRelation: "credit_cards"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      installments: {
+        Row: {
+          id: string
+          debt_id: string
+          number: number
+          due_month: string
+          amount: number
+          status: string
+          paid_at: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          debt_id: string
+          number: number
+          due_month: string
+          amount: number
+          status?: string
+          paid_at?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          debt_id?: string
+          number?: number
+          due_month?: string
+          amount?: number
+          status?: string
+          paid_at?: string | null
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "installments_debt_id_fkey"
+            columns: ["debt_id"]
+            isOneToOne: false
+            referencedRelation: "debts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      monthly_cap: {
+        Row: {
+          id: string
+          user_id: string
+          card_id: string
+          month: string
+          cap_amount: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          card_id: string
+          month: string
+          cap_amount: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          card_id?: string
+          month?: string
+          cap_amount?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "monthly_cap_card_id_fkey"
+            columns: ["card_id"]
+            isOneToOne: false
+            referencedRelation: "credit_cards"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       credit_cards: {
         Row: {
           brand: string

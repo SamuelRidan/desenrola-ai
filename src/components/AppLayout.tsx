@@ -4,7 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 import {
   CreditCard, LayoutDashboard, Upload, FileText, Users,
-  Receipt, Tag, LogOut, Menu, X, ChevronRight, Wallet, BarChart3
+  Receipt, Tag, LogOut, Menu, X, ChevronRight, Wallet, BarChart3, Target
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
@@ -27,6 +27,7 @@ const navItems: NavItem[] = [
   { label: "Despesas Mensais", href: "/despesas", icon: <Receipt className="w-5 h-5" />, roles: ["user"] },
   { label: "Divisão de Despesas", href: "/divisao", icon: <Users className="w-5 h-5" />, roles: ["admin", "user"] },
   { label: "Pagamentos", href: "/pagamentos", icon: <Wallet className="w-5 h-5" />, roles: ["admin", "user"] },
+  { label: "Plano de Quitação", href: "/quitacao", icon: <Target className="w-5 h-5" />, roles: ["admin", "user"] },
   { label: "Apelidos", href: "/apelidos", icon: <Tag className="w-5 h-5" />, roles: ["admin", "user"] },
   { label: "Usuários", href: "/usuarios", icon: <Users className="w-5 h-5" />, roles: ["admin"] },
 ];
