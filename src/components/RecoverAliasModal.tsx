@@ -23,10 +23,17 @@ interface RecoverAliasModalProps {
 interface FoundAlias {
   alias: string | null;
   description: string;
+  amount: number;
   statementMonth: number;
   statementYear: number;
   cardName: string;
   assignedUsers: { name: string; userId: string; shareAmount: number }[];
+}
+
+// Only installments 2+ can recover history — the 1st installment has no previous occurrence
+export function canRecoverHistory(description: string): boolean {
+  const p = parseInstallment(description || "");
+  return !!p && p.current > 1;
 }
 
 const MONTH_NAMES = [
@@ -53,6 +60,7 @@ export default function RecoverAliasModal({ open, onOpenChange, transaction, pro
   const [applying, setApplying] = useState(false);
   const [found, setFound] = useState<FoundAlias | null>(null);
   const [notFound, setNotFound] = useState(false);
+  const [notFoundMessage, setNotFoundMessage] = useState<string | null>(null);
   const [debugInfo, setDebugInfo] = useState("");
 
   const extractResult = (match: any): FoundAlias => {
@@ -64,6 +72,7 @@ export default function RecoverAliasModal({ open, onOpenChange, transaction, pro
     return {
       alias: match.alias,
       description: match.description,
+      amount: Math.abs(Number(match.amount || 0)),
       statementMonth: match.statements?.month || 0,
       statementYear: match.statements?.year || 0,
       cardName: match.statements?.credit_cards?.name || "—",
@@ -76,6 +85,7 @@ export default function RecoverAliasModal({ open, onOpenChange, transaction, pro
     if (!open || !transaction) {
       setFound(null);
       setNotFound(false);
+      setNotFoundMessage(null);
       setDebugInfo("");
       return;
     }
@@ -84,6 +94,7 @@ export default function RecoverAliasModal({ open, onOpenChange, transaction, pro
       setLoading(true);
       setFound(null);
       setNotFound(false);
+      setNotFoundMessage(null);
       setDebugInfo("");
 
       const logs: string[] = [];
@@ -107,8 +118,76 @@ export default function RecoverAliasModal({ open, onOpenChange, transaction, pro
 
         log(`Parcela: ${parsed.current}/${parsed.total}, base: "${parsed.cleanDesc}"`);
 
+        // 1st installment: there is no previous occurrence — do not search (avoids false matches)
+        if (parsed.current === 1) {
+          log("❌ Parcela 1: não há histórico anterior para recuperar.");
+          setNotFound(true);
+          setNotFoundMessage("Este lançamento é a 1ª parcela — não existe fatura anterior com este parcelamento. Defina o apelido e a atribuição manualmente.");
+          setDebugInfo(logs.join("\n"));
+          setLoading(false);
+          return;
+        }
+
         const txAmount = Math.abs(transaction.amount);
         const selectFields = "id, description, alias, amount, statement_id, statements(month, year, credit_cards(name)), transaction_assignments(user_id, share_amount)";
+
+        // --- Build the 5-month lookback window based on the current statement ---
+        const { data: currentStmt, error: stmtErr } = await supabase
+          .from("statements")
+          .select("month, year")
+          .eq("id", transaction.statement_id)
+          .single();
+
+        if (stmtErr || !currentStmt) {
+          log(`Erro ao buscar fatura atual: ${stmtErr?.message || "não encontrada"}`);
+          setNotFound(true);
+          setDebugInfo(logs.join("\n"));
+          setLoading(false);
+          return;
+        }
+
+        // Previous 5 months (month/year pairs), most recent first
+        const windowPairs: { month: number; year: number; distance: number }[] = [];
+        let m = currentStmt.month;
+        let y = currentStmt.year;
+        for (let i = 1; i <= 5; i++) {
+          m -= 1;
+          if (m === 0) {
+            m = 12;
+            y -= 1;
+          }
+          windowPairs.push({ month: m, year: y, distance: i });
+        }
+
+        const { data: allStmts, error: stmtsErr } = await supabase
+          .from("statements")
+          .select("id, month, year");
+
+        if (stmtsErr) {
+          log(`Erro ao buscar faturas: ${stmtsErr.message}`);
+          setNotFound(true);
+          setDebugInfo(logs.join("\n"));
+          setLoading(false);
+          return;
+        }
+
+        // Map statement_id -> distance in months (1 = mês passado ... 5)
+        const stmtDistance: Record<string, number> = {};
+        (allStmts || []).forEach((s: any) => {
+          const pair = windowPairs.find((p) => p.month === s.month && p.year === s.year);
+          if (pair) stmtDistance[s.id] = pair.distance;
+        });
+
+        const windowIds = Object.keys(stmtDistance);
+        log(`Janela de busca: últimos 5 meses (${windowPairs.map((p) => `${p.month}/${p.year}`).join(", ")}) → ${windowIds.length} fatura(s)`);
+
+        if (windowIds.length === 0) {
+          log("❌ Nenhuma fatura encontrada nos últimos 5 meses.");
+          setNotFound(true);
+          setDebugInfo(logs.join("\n"));
+          setLoading(false);
+          return;
+        }
 
         // Extract a short base name for ilike search (first meaningful word/prefix)
         // e.g. "SilvanaRodrig RIO DE JANEI" → "SilvanaRodrig"
@@ -119,12 +198,12 @@ export default function RecoverAliasModal({ open, onOpenChange, transaction, pro
 
         log(`Busca por: "${searchPattern}%"`);
 
-        // Fetch ALL candidates matching the base name (from other statements)
+        // Fetch candidates matching the base name, only from statements in the 5-month window
         // Include transactions with or without alias — we also want assignment info
         const { data: candidates, error: fetchErr } = await supabase
           .from("transactions")
           .select(selectFields)
-          .neq("statement_id", transaction.statement_id)
+          .in("statement_id", windowIds)
           .ilike("description", `${searchPattern}%`)
           .order("created_at", { ascending: false })
           .limit(50);
@@ -189,7 +268,12 @@ export default function RecoverAliasModal({ open, onOpenChange, transaction, pro
             score += 10;
           }
 
-          return { ...c, score, cParsed, amountDiff };
+          // Recency bonus: prioritize the most recent statements
+          // distance 1 (mês passado) = +25 ... distance 5 = +5
+          const distance = stmtDistance[c.statement_id] || 5;
+          score += (6 - distance) * 5;
+
+          return { ...c, score, cParsed, amountDiff, distance };
         });
 
         // Sort by score descending
@@ -200,7 +284,7 @@ export default function RecoverAliasModal({ open, onOpenChange, transaction, pro
           const parcInfo = c.cParsed ? `${c.cParsed.current}/${c.cParsed.total}` : "?";
           const aliasInfo = c.alias ? `"${c.alias}"` : "(sem apelido)";
           const assignInfo = c.transaction_assignments?.length ? `${c.transaction_assignments.length} atrib.` : "sem atrib.";
-          log(`  #${i + 1} score=${c.score} | ${aliasInfo} | ${assignInfo} | ${parcInfo} | R$ ${c.amount} (diff=${c.amountDiff.toFixed(2)}) | "${c.description}"`);
+          log(`  #${i + 1} score=${c.score} | ${aliasInfo} | ${assignInfo} | ${parcInfo} | -${c.distance} mês(es) | R$ ${c.amount} (diff=${c.amountDiff.toFixed(2)}) | "${c.description}"`);
         });
 
         // Pick the best match (must have a minimum score to be considered valid)
@@ -329,7 +413,7 @@ export default function RecoverAliasModal({ open, onOpenChange, transaction, pro
               Recuperar Histórico
             </DialogTitle>
             <DialogDescription className="text-white/70 text-sm mt-1">
-              Busca apelido e atribuições em faturas anteriores para este parcelamento
+              Busca um lançamento similar nas faturas dos últimos 5 meses para sugerir apelido e atribuições
             </DialogDescription>
           </DialogHeader>
         </div>
@@ -365,7 +449,7 @@ export default function RecoverAliasModal({ open, onOpenChange, transaction, pro
               className="flex flex-col items-center justify-center py-8 space-y-3"
             >
               <Loader2 className="w-8 h-8 text-primary animate-spin" />
-              <p className="text-sm text-muted-foreground">Buscando em faturas anteriores...</p>
+              <p className="text-sm text-muted-foreground">Buscando nas faturas dos últimos 5 meses...</p>
             </motion.div>
           )}
 
@@ -380,7 +464,7 @@ export default function RecoverAliasModal({ open, onOpenChange, transaction, pro
                 <AlertCircle className="w-6 h-6 text-muted-foreground" />
               </div>
               <p className="text-sm text-muted-foreground text-center">
-                Nenhum apelido ou histórico encontrado em faturas anteriores para este lançamento.
+                {notFoundMessage || "Nenhum lançamento similar encontrado nas faturas dos últimos 5 meses."}
               </p>
             </motion.div>
           )}
@@ -394,7 +478,10 @@ export default function RecoverAliasModal({ open, onOpenChange, transaction, pro
             >
               {/* Found info card */}
               <div className="rounded-xl border-2 border-primary/30 bg-primary/5 p-4 space-y-3">
-                <p className="text-xs font-medium text-primary uppercase tracking-wide">Informações da Fatura Anterior</p>
+                <p className="text-xs font-medium text-primary uppercase tracking-wide">Lançamento Similar Encontrado</p>
+                <p className="text-xs text-muted-foreground -mt-1">
+                  Este é o lançamento mais parecido nas faturas dos últimos 5 meses. Confira os dados antes de aplicar.
+                </p>
 
                 {/* Alias (only if present) */}
                 {found.alias ? (
@@ -410,19 +497,48 @@ export default function RecoverAliasModal({ open, onOpenChange, transaction, pro
                     <Tag className="w-4 h-4 text-muted-foreground/50 mt-0.5 shrink-0" />
                     <div>
                       <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Apelido</p>
-                      <p className="text-xs text-muted-foreground italic">Sem apelido na fatura anterior</p>
+                      <p className="text-xs text-muted-foreground italic">Sem apelido no lançamento similar</p>
                     </div>
                   </div>
                 )}
 
-                {/* Original description from previous invoice */}
+                {/* Original description from the similar transaction */}
                 <div className="flex items-start gap-2">
                   <FileText className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
                   <div>
-                    <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Descrição na fatura anterior</p>
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Descrição do lançamento similar</p>
                     <p className="text-sm text-foreground break-words">{found.description}</p>
                   </div>
                 </div>
+
+                {/* Amount of the similar transaction, compared to current */}
+                {transaction && (() => {
+                  const currentAmount = Math.abs(transaction.amount);
+                  const diff = Math.abs(found.amount - currentAmount);
+                  const sameAmount = diff < 0.05;
+                  return (
+                    <div className="flex items-start gap-2">
+                      <CreditCard className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
+                      <div>
+                        <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Valor do lançamento similar</p>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-sm font-bold text-foreground">
+                            R$ {found.amount.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                          </p>
+                          {sameAmount ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 text-emerald-600 border border-emerald-500/25 px-2 py-0.5 text-[10px] font-medium">
+                              <CheckCircle className="w-3 h-3" /> mesmo valor
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 text-amber-600 border border-amber-500/25 px-2 py-0.5 text-[10px] font-medium">
+                              <AlertCircle className="w-3 h-3" /> difere R$ {diff.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Source statement */}
                 <div className="flex items-start gap-2">
@@ -468,7 +584,7 @@ export default function RecoverAliasModal({ open, onOpenChange, transaction, pro
                     <User className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
                     <div>
                       <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Atribuído a</p>
-                      <p className="text-xs text-muted-foreground italic mt-0.5">Sem atribuição na fatura anterior</p>
+                      <p className="text-xs text-muted-foreground italic mt-0.5">Sem atribuição no lançamento similar</p>
                     </div>
                   </div>
                 )}

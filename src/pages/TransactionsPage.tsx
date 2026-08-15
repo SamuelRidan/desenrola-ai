@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { Search, CheckCircle, Users, DollarSign, User, Plus, CreditCard, AlertTriangle, Wallet, Scissors, Receipt, X, UserPlus, Calendar, ChevronLeft, ChevronRight, Layers, UserCircle, Trash2, CalendarClock, History, Tag, ClipboardList, Download, Pencil } from "lucide-react";
+import { Search, CheckCircle, Users, DollarSign, User, Plus, CreditCard, AlertTriangle, Wallet, Scissors, Receipt, X, UserPlus, Calendar, Layers, UserCircle, Trash2, CalendarClock, History, Tag, ClipboardList, Download, Pencil } from "lucide-react";
 
 const MONTH_NAMES = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 const MONTH_NAMES_FULL = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
@@ -18,7 +18,7 @@ import AssignTransactionDialog from "@/components/AssignTransactionDialog";
 import AddTransactionDialog from "@/components/AddTransactionDialog";
 import BulkAssignDialog from "@/components/BulkAssignDialog";
 import InstallmentModal, { parseInstallment } from "@/components/InstallmentModal";
-import RecoverAliasModal from "@/components/RecoverAliasModal";
+import RecoverAliasModal, { canRecoverHistory } from "@/components/RecoverAliasModal";
 
 const USER_COLORS = [
   { bg: "bg-violet-500/15", text: "text-violet-600", border: "border-violet-500/25", ring: "ring-violet-500/20" },
@@ -82,17 +82,52 @@ export default function TransactionsPage() {
     },
   });
 
-  // Auto-select latest statement
-  useEffect(() => {
-    if (!selectedStatement && statements && statements.length > 0) {
-      const sorted = [...statements].sort((a: any, b: any) => 
-        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-      );
-      setSelectedStatement(sorted[0].id);
+  // Group statements by month/year (desc), for the two-level selector
+  const monthGroups = useMemo(() => {
+    if (!statements) return [] as { key: string; month: number; year: number; statements: any[] }[];
+    const map = new Map<string, { key: string; month: number; year: number; statements: any[] }>();
+    for (const s of statements as any[]) {
+      const key = `${s.year}-${String(s.month).padStart(2, "0")}`;
+      if (!map.has(key)) map.set(key, { key, month: s.month, year: s.year, statements: [] });
+      map.get(key)!.statements.push(s);
     }
-  }, [statements, selectedStatement]);
+    const groups = Array.from(map.values());
+    groups.sort((a, b) => (a.year !== b.year ? b.year - a.year : b.month - a.month));
+    groups.forEach((g) => g.statements.sort((a: any, b: any) => (a.credit_cards?.name || "").localeCompare(b.credit_cards?.name || "")));
+    return groups;
+  }, [statements]);
+
+  const today = new Date();
+  const currentMonthKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
+
+  // Auto-select: prefer the current calendar month, else the most recent month
+  useEffect(() => {
+    if (!selectedStatement && monthGroups.length > 0) {
+      const target = monthGroups.find((g) => g.key === currentMonthKey) || monthGroups[0];
+      setSelectedStatement(target.statements[0].id);
+    }
+  }, [monthGroups, selectedStatement, currentMonthKey]);
 
   const effectiveStatement = selectedStatement || "all";
+
+  // Month key of the currently selected statement ("all" when viewing everything)
+  const selectedStmtObj = statements?.find((s: any) => s.id === selectedStatement);
+  const selectedMonthKey = selectedStmtObj
+    ? `${selectedStmtObj.year}-${String(selectedStmtObj.month).padStart(2, "0")}`
+    : "all";
+
+  const handleSelectMonth = (key: string) => {
+    if (key === "all") {
+      setSelectedStatement("all");
+      return;
+    }
+    const group = monthGroups.find((g) => g.key === key);
+    if (!group) return;
+    // Keep the same card when switching months, if it exists in the target month
+    const currentCardName = selectedStmtObj?.credit_cards?.name;
+    const sameCard = group.statements.find((s: any) => s.credit_cards?.name === currentCardName);
+    setSelectedStatement((sameCard || group.statements[0]).id);
+  };
 
   const { data: rawTransactions, isLoading } = useQuery({
      queryKey: ["transactions", effectiveStatement, search],
@@ -666,7 +701,7 @@ export default function TransactionsPage() {
         ) : null}
 
         <div className="grid grid-cols-2 gap-1.5 pt-2 border-t border-border/50">
-          {parseInstallment(t.description || "") && (
+          {canRecoverHistory(t.description || "") && (
             <Button
               variant="outline"
               size="sm"
@@ -901,112 +936,79 @@ export default function TransactionsPage() {
         </div>
       )}
 
-      {/* Statement Carousel Selector */}
+      {/* Statement Selector: month chips + cards of the selected month */}
       {statements && statements.length > 0 && (
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Calendar className="w-4 h-4 text-muted-foreground" />
-              <p className="text-sm font-medium text-muted-foreground">Selecione a fatura</p>
-            </div>
-            <div className="hidden md:flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7 rounded-full"
-                onClick={() => {
-                  const el = document.getElementById('statement-carousel');
-                  if (el) el.scrollBy({ left: -200, behavior: 'smooth' });
-                }}
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7 rounded-full"
-                onClick={() => {
-                  const el = document.getElementById('statement-carousel');
-                  if (el) el.scrollBy({ left: 200, behavior: 'smooth' });
-                }}
-              >
-                <ChevronRight className="w-4 h-4" />
-              </Button>
-            </div>
+        <div className="space-y-2.5">
+          <div className="flex items-center gap-2">
+            <Calendar className="w-4 h-4 text-muted-foreground" />
+            <p className="text-sm font-medium text-muted-foreground">Selecione a fatura</p>
           </div>
-          <div
-            id="statement-carousel"
-            className="flex gap-2.5 overflow-x-auto pb-2 scrollbar-hide -mx-4 px-4 md:mx-0 md:px-0 snap-x snap-mandatory"
-          >
-            {/* "Todas" card */}
-            <motion.button
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              whileTap={{ scale: 0.97 }}
-              onClick={() => setSelectedStatement("all")}
-              className={`relative flex-shrink-0 snap-start rounded-xl border-2 p-3 md:p-3.5 min-w-[130px] md:min-w-[150px] text-left transition-all duration-200 ${
-                effectiveStatement === "all"
-                  ? "border-primary bg-primary/10 shadow-md ring-1 ring-primary/20"
-                  : "border-border bg-card hover:border-muted-foreground/30 hover:bg-muted/40"
+
+          {/* Level 1: months */}
+          <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide -mx-4 px-4 md:mx-0 md:px-0">
+            <button
+              onClick={() => handleSelectMonth("all")}
+              className={`flex-shrink-0 inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium border-2 transition-all duration-200 ${
+                selectedMonthKey === "all"
+                  ? "border-primary bg-primary/10 text-primary shadow-sm ring-1 ring-primary/20"
+                  : "border-border bg-card text-muted-foreground hover:border-muted-foreground/30 hover:bg-muted/40"
               }`}
             >
-              <div className={`w-8 h-8 rounded-lg flex items-center justify-center mb-2 ${
-                effectiveStatement === "all" ? "bg-primary/15" : "bg-muted"
-              }`}>
-                <Layers className={`w-4 h-4 ${effectiveStatement === "all" ? "text-primary" : "text-muted-foreground"}`} />
-              </div>
-              <p className={`text-base md:text-lg font-bold truncate ${
-                effectiveStatement === "all" ? "text-primary" : "text-foreground"
-              }`}>Todas</p>
-              <p className="text-xs text-muted-foreground mt-0.5">Todas as faturas</p>
-              {effectiveStatement === "all" && (
-                <motion.div
-                  layoutId="statement-indicator"
-                  className="absolute bottom-0 left-2 right-2 h-0.5 rounded-full bg-primary"
-                />
-              )}
-            </motion.button>
+              <Layers className="w-3.5 h-3.5" />
+              Todas
+            </button>
+            {monthGroups.map((g) => {
+              const isSelected = selectedMonthKey === g.key;
+              const isCurrentMonth = g.key === currentMonthKey;
+              return (
+                <button
+                  key={g.key}
+                  onClick={() => handleSelectMonth(g.key)}
+                  className={`flex-shrink-0 inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium border-2 transition-all duration-200 ${
+                    isSelected
+                      ? "border-primary bg-primary/10 text-primary shadow-sm ring-1 ring-primary/20"
+                      : isCurrentMonth
+                        ? "border-primary/40 bg-primary/5 text-foreground hover:bg-primary/10"
+                        : "border-border bg-card text-muted-foreground hover:border-muted-foreground/30 hover:bg-muted/40"
+                  }`}
+                >
+                  {MONTH_NAMES_FULL[(g.month || 1) - 1]} {g.year}
+                  {isCurrentMonth && (
+                    <span className={`text-[10px] font-bold uppercase tracking-wide rounded-full px-1.5 py-0.5 ${
+                      isSelected ? "bg-primary text-primary-foreground" : "bg-primary/15 text-primary"
+                    }`}>
+                      Atual
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
 
-            {/* Statement cards */}
-            {[...statements]
-              .sort((a: any, b: any) => {
-                if (a.year !== b.year) return b.year - a.year;
-                return b.month - a.month;
-              })
-              .map((s: any, i: number) => {
+          {/* Level 2: cards within the selected month */}
+          {selectedMonthKey !== "all" && (
+            <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide -mx-4 px-4 md:mx-0 md:px-0">
+              {(monthGroups.find((g) => g.key === selectedMonthKey)?.statements || []).map((s: any) => {
                 const isSelected = selectedStatement === s.id;
-                const monthIdx = (s.month || 1) - 1;
                 return (
                   <motion.button
                     key={s.id}
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{ delay: Math.min(i * 0.03, 0.3) }}
                     whileTap={{ scale: 0.97 }}
                     onClick={() => setSelectedStatement(s.id)}
-                    className={`relative flex-shrink-0 snap-start rounded-xl border-2 p-3 md:p-3.5 min-w-[140px] md:min-w-[160px] text-left transition-all duration-200 ${
+                    className={`relative flex-shrink-0 inline-flex items-center gap-2 rounded-xl border-2 px-3.5 py-2 text-left transition-all duration-200 ${
                       isSelected
                         ? "border-primary bg-primary/10 shadow-md ring-1 ring-primary/20"
                         : "border-border bg-card hover:border-muted-foreground/30 hover:bg-muted/40"
                     }`}
                   >
-                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center mb-2 ${
+                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
                       isSelected ? "gradient-primary" : "bg-muted"
                     }`}>
-                      <CreditCard className={`w-4 h-4 ${
-                        isSelected ? "text-white" : "text-muted-foreground"
-                      }`} />
+                      <CreditCard className={`w-3.5 h-3.5 ${isSelected ? "text-white" : "text-muted-foreground"}`} />
                     </div>
-                    <p className={`text-base md:text-lg font-bold truncate ${
-                      isSelected ? "text-primary" : "text-foreground"
-                    }`}>
+                    <span className={`text-sm font-bold truncate ${isSelected ? "text-primary" : "text-foreground"}`}>
                       {s.credit_cards?.name}
-                    </p>
-                    <p className={`text-xs mt-0.5 truncate ${
-                      isSelected ? "text-primary/70 font-medium" : "text-muted-foreground"
-                    }`}>
-                      {MONTH_NAMES_FULL[monthIdx]} · {s.year}
-                    </p>
+                    </span>
                     {isSelected && (
                       <motion.div
                         layoutId="statement-indicator"
@@ -1016,7 +1018,8 @@ export default function TransactionsPage() {
                   </motion.button>
                 );
               })}
-          </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -1404,13 +1407,13 @@ export default function TransactionsPage() {
                         </td>
                         <td className="p-3">
                           <div className="flex items-center justify-center gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
-                            {parseInstallment(t.description || "") && (
+                            {canRecoverHistory(t.description || "") && (
                               <Button
                                 variant="outline"
                                 size="sm"
                                 className="h-7 px-2 border-amber-300 text-amber-850 bg-amber-50/80 hover:bg-amber-100 hover:text-amber-900 flex items-center gap-1 font-semibold text-xs shadow-sm rounded-md shrink-0"
                                 onClick={() => setRecoverAliasTx({ id: t.id, description: t.description, statement_id: t.statement_id, amount: Number(t.amount) })}
-                                title="Recuperar histórico da fatura anterior"
+                                title="Buscar lançamento similar nas faturas dos últimos 5 meses"
                               >
                                 <History className="w-3.5 h-3.5 text-amber-600" />
                                 Recuperar Histórico
