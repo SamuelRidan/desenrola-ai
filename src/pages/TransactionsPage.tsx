@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { Search, CheckCircle, Users, DollarSign, User, Plus, CreditCard, AlertTriangle, Wallet, Scissors, Receipt, X, UserPlus, Calendar, Layers, UserCircle, Trash2, CalendarClock, History, Tag, ClipboardList, Download, Pencil } from "lucide-react";
+import { Search, CheckCircle, Users, DollarSign, User, Plus, CreditCard, AlertTriangle, Wallet, Scissors, Receipt, X, UserPlus, Calendar, Layers, UserCircle, Trash2, CalendarClock, History, ClipboardList, Download, Pencil } from "lucide-react";
 
 const MONTH_NAMES = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 const MONTH_NAMES_FULL = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
@@ -1609,29 +1609,29 @@ export default function TransactionsPage() {
           <div className="px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
             {/* Progress bar */}
             {(() => {
-              const unassignedPct = progressStats.total > 0
-                ? Math.round((progressStats.noAssignment / progressStats.total) * 100)
+              const assignedPct = progressStats.total > 0
+                ? Math.round((progressStats.withAssignment / progressStats.total) * 100)
                 : 0;
               return (
                 <>
                   <div className="flex items-center justify-between text-[11px] text-muted-foreground mb-1.5">
                     <span className="font-medium">
-                      {progressStats.noAssignment} de {progressStats.total} não atribuídos
+                      {progressStats.withAssignment} de {progressStats.total} atribuídos
                     </span>
                     <span className="font-semibold text-foreground">
-                      {unassignedPct}% sem atribuição
+                      {assignedPct}% atribuído
                     </span>
                   </div>
                   <div className="h-1.5 rounded-full bg-muted overflow-hidden mb-3">
                     <div
                       className={`h-full rounded-full transition-all duration-500 ${
-                        unassignedPct === 0
+                        assignedPct === 100
                           ? "bg-emerald-500"
-                          : unassignedPct > 50
+                          : assignedPct < 50
                             ? "bg-rose-500"
                             : "bg-amber-500"
                       }`}
-                      style={{ width: `${unassignedPct}%` }}
+                      style={{ width: `${assignedPct}%` }}
                     />
                   </div>
                 </>
@@ -1639,28 +1639,10 @@ export default function TransactionsPage() {
             })()}
 
             {/* Quick filter chips */}
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setSelectedFillFilter(selectedFillFilter === "no-alias" ? "all" : "no-alias")}
-                className={`flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium border transition-all ${
-                  selectedFillFilter === "no-alias"
-                    ? "border-amber-400 bg-amber-50 text-amber-800 shadow-sm"
-                    : "border-border bg-muted/40 text-muted-foreground active:bg-muted"
-                }`}
-              >
-                <Tag className="w-3.5 h-3.5 shrink-0" />
-                <span>Sem apelido</span>
-                <span className={`min-w-[20px] h-5 rounded-full text-[10px] font-bold flex items-center justify-center px-1.5 ${
-                  progressStats.noAlias > 0 
-                    ? selectedFillFilter === "no-alias" ? "bg-amber-200 text-amber-900" : "bg-amber-100 text-amber-700"
-                    : "bg-emerald-100 text-emerald-700"
-                }`}>
-                  {progressStats.noAlias}
-                </span>
-              </button>
+            <div className="flex items-center">
               <button
                 onClick={() => setSelectedFillFilter(selectedFillFilter === "no-assignment" ? "all" : "no-assignment")}
-                className={`flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium border transition-all ${
+                className={`w-full inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium border transition-all ${
                   selectedFillFilter === "no-assignment"
                     ? "border-violet-400 bg-violet-50 text-violet-800 shadow-sm"
                     : "border-border bg-muted/40 text-muted-foreground active:bg-muted"
